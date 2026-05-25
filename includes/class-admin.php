@@ -332,12 +332,16 @@ class AIN_Admin {
     public static function queue() {
         $campaign_id = isset( $_GET['campaign_id'] ) ? (int) $_GET['campaign_id'] : 0;
         $status = isset( $_GET['status'] ) ? sanitize_key( $_GET['status'] ) : '';
+        $unlocked = method_exists( 'AIN_DB', 'reset_stale_writer_items' ) ? AIN_DB::reset_stale_writer_items( 45 ) : 0;
         self::shell_start( 'Story Queue', 'Review planned, drafted, published, and failed items across campaigns.' );
+        if ( $unlocked ) {
+            echo '<div class="notice notice-warning is-dismissible ain-native-notice"><p>' . esc_html( sprintf( 'Unlocked %d stale writing job(s). Review the failed item(s), then click Write to retry.', (int) $unlocked ) ) . '</p></div>';
+        }
         echo '<div class="ain-card ain-filterbar"><form method="get"><input type="hidden" name="page" value="ain-queue">';
         self::select_campaign_filter( $campaign_id );
         echo '<select name="status"><option value="">All statuses</option>';
         foreach ( array( 'queued','writing','planned','approved','drafted','needs_review','published','failed','rejected' ) as $st ) echo '<option value="' . esc_attr( $st ) . '" ' . selected( $status, $st, false ) . '>' . esc_html( ain_status_label( $st ) ) . '</option>';
-        echo '</select><button class="ain-btn">Filter</button></form></div>';
+        echo '</select><button class="ain-btn">Filter</button> <button type="button" class="ain-btn ain-btn-light ain-js-action" data-action="ain_unlock_stale_items" data-id="0" data-confirm="Unlock writing/queued jobs older than 10 minutes?">Unlock stuck jobs</button></form></div>';
         self::queue_table( AIN_DB::queue_items( array( 'campaign_id' => $campaign_id, 'status' => $status, 'limit' => 200 ) ), true );
         self::shell_end();
     }

@@ -381,6 +381,36 @@ class AIN_DB {
         return $wpdb->update( ain_table( 'queue' ), $fields, array( 'id' => (int) $id ) );
     }
 
+
+    public static function reset_stale_writer_items( $minutes = 45 ) {
+        global $wpdb;
+        $minutes = max( 10, (int) $minutes );
+        $cutoff = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp', true ) - ( $minutes * MINUTE_IN_SECONDS ) );
+        $table = ain_table( 'queue' );
+        $message = sprintf( 'Writing job was unlocked automatically because it was stuck for more than %d minutes. You can click Write again to retry.', $minutes );
+        $result = $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$table} SET status = 'failed', error_message = %s, updated_at = %s WHERE status IN ('queued','writing') AND updated_at < %s",
+                $message,
+                current_time( 'mysql' ),
+                $cutoff
+            )
+        );
+        return (int) $result;
+    }
+
+    public static function is_writer_item_stale( $item, $minutes = 45 ) {
+        if ( ! $item || empty( $item->updated_at ) || ! in_array( $item->status, array( 'queued', 'writing' ), true ) ) {
+            return false;
+        }
+        $minutes = max( 10, (int) $minutes );
+        $updated = strtotime( $item->updated_at . ' UTC' );
+        if ( ! $updated ) {
+            $updated = strtotime( $item->updated_at );
+        }
+        return $updated && $updated < ( current_time( 'timestamp', true ) - ( $minutes * MINUTE_IN_SECONDS ) );
+    }
+
     public static function delete_item( $id ) {
         global $wpdb;
         return $wpdb->delete( ain_table( 'queue' ), array( 'id' => (int) $id ) );

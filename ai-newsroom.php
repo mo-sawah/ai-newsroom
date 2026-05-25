@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AI Newsroom
  * Description: Smart story-first AI newsroom automation for WordPress: campaign sources, story clustering, OpenRouter web research, editorial writing, media, and Rank Math SEO metadata.
- * Version: 2.0.15
+ * Version: 2.0.16
  * Author: Mohamed Sawah
  * Text Domain: ai-newsroom
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'AIN_VERSION', '2.0.15' );
+define( 'AIN_VERSION', '2.0.16' );
 define( 'AIN_FILE', __FILE__ );
 define( 'AIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIN_URL', plugin_dir_url( __FILE__ ) );
@@ -73,7 +73,11 @@ function ain_cron_run_due_campaigns() {
         return;
     }
     set_transient( 'ain_campaign_runner_lock', 1, 10 * MINUTE_IN_SECONDS );
-    AIN_Campaigns::run_due_campaigns();
+    try {
+        AIN_Campaigns::run_due_campaigns();
+    } catch ( Throwable $e ) {
+        ain_log( 'error', 'Campaign runner crashed.', array( 'error' => $e->getMessage() ) );
+    }
     delete_transient( 'ain_campaign_runner_lock' );
 }
 
@@ -83,7 +87,14 @@ function ain_cron_write_due_items() {
         return;
     }
     set_transient( 'ain_writer_lock', 1, 15 * MINUTE_IN_SECONDS );
-    AIN_Writer::write_due_items();
+    try {
+        if ( method_exists( 'AIN_DB', 'reset_stale_writer_items' ) ) {
+            AIN_DB::reset_stale_writer_items( 45 );
+        }
+        AIN_Writer::write_due_items();
+    } catch ( Throwable $e ) {
+        ain_log( 'error', 'Writer cron crashed.', array( 'error' => $e->getMessage() ) );
+    }
     delete_transient( 'ain_writer_lock' );
 }
 
@@ -96,21 +107,54 @@ add_action( 'ain_async_write_item', 'ain_async_write_item_worker', 10, 1 );
 function ain_async_write_item_worker( $item_id ) {
     $item_id = (int) $item_id;
     if ( ! $item_id ) return;
+    if ( function_exists( 'set_time_limit' ) ) {
+        @set_time_limit( 300 );
+    }
     if ( get_transient( 'ain_async_write_lock_' . $item_id ) ) return;
-    set_transient( 'ain_async_write_lock_' . $item_id, 1, 30 * MINUTE_IN_SECONDS );
+
+    set_transient( 'ain_async_write_lock_' . $item_id, 1, 45 * MINUTE_IN_SECONDS );
     set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'running', 'message' => 'Writing article…' ), HOUR_IN_SECONDS );
-    $item = AIN_DB::get_item( $item_id );
-    if ( ! $item ) {
-        set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'error', 'message' => 'Queue item not found.' ), HOUR_IN_SECONDS );
-        delete_transient( 'ain_async_write_lock_' . $item_id );
-        return;
+
+    $completed = false;
+    register_shutdown_function( function() use ( $item_id, &$completed ) {
+        if ( $completed ) {
+            return;
+        }
+        $error = error_get_last();
+        $fatal_types = array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR );
+        if ( $error && in_array( (int) $error['type'], $fatal_types, true ) ) {
+            $message = 'Writer stopped unexpectedly: ' . ( $error['message'] ?? 'Unknown fatal error.' );
+            if ( class_exists( 'AIN_DB' ) ) {
+                AIN_DB::update_item( $item_id, array( 'status' => 'failed', 'error_message' => $message ) );
+            }
+            set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'error', 'message' => $message ), HOUR_IN_SECONDS );
+            delete_transient( 'ain_async_write_lock_' . $item_id );
+        }
+    } );
+
+    try {
+        $item = AIN_DB::get_item( $item_id );
+        if ( ! $item ) {
+            set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'error', 'message' => 'Queue item not found.' ), HOUR_IN_SECONDS );
+            delete_transient( 'ain_async_write_lock_' . $item_id );
+            $completed = true;
+            return;
+        }
+        $result = AIN_Writer::write_item( $item );
+        if ( is_wp_error( $result ) ) {
+            AIN_DB::update_item( $item_id, array( 'status' => 'failed', 'error_message' => $result->get_error_message() ) );
+            set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'error', 'message' => $result->get_error_message() ), HOUR_IN_SECONDS );
+        } else {
+            set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'complete', 'message' => $result['message'] ?? 'Article generated.', 'post_id' => (int) ( $result['post_id'] ?? 0 ) ), HOUR_IN_SECONDS );
+        }
+    } catch ( Throwable $e ) {
+        $message = 'Writer crashed: ' . $e->getMessage();
+        AIN_DB::update_item( $item_id, array( 'status' => 'failed', 'error_message' => $message ) );
+        set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'error', 'message' => $message ), HOUR_IN_SECONDS );
+        ain_log( 'error', 'Async writer crashed.', array( 'error' => $e->getMessage() ), 0, $item_id );
     }
-    $result = AIN_Writer::write_item( $item );
-    if ( is_wp_error( $result ) ) {
-        set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'error', 'message' => $result->get_error_message() ), HOUR_IN_SECONDS );
-    } else {
-        set_transient( 'ain_async_item_status_' . $item_id, array( 'state' => 'complete', 'message' => $result['message'] ?? 'Article generated.', 'post_id' => (int) ( $result['post_id'] ?? 0 ) ), HOUR_IN_SECONDS );
-    }
+
+    $completed = true;
     delete_transient( 'ain_async_write_lock_' . $item_id );
 }
 

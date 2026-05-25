@@ -11,6 +11,7 @@ class AIN_Ajax {
         add_action( 'wp_ajax_ain_write_item', array( __CLASS__, 'write_item' ) );
         add_action( 'wp_ajax_ain_delete_item', array( __CLASS__, 'delete_item' ) );
         add_action( 'wp_ajax_ain_get_action_status', array( __CLASS__, 'get_action_status' ) );
+        add_action( 'wp_ajax_ain_unlock_stale_items', array( __CLASS__, 'unlock_stale_items' ) );
     }
 
     private static function guard() {
@@ -63,6 +64,9 @@ class AIN_Ajax {
         self::guard();
         $id = (int) ( $_POST['id'] ?? 0 );
         if ( ! $id ) wp_send_json_error( 'Missing queue item ID.' );
+        if ( method_exists( 'AIN_DB', 'reset_stale_writer_items' ) ) {
+            AIN_DB::reset_stale_writer_items( 45 );
+        }
         $item = AIN_DB::get_item( $id );
         if ( ! $item ) wp_send_json_error( 'Queue item not found.' );
         if ( in_array( $item->status, array( 'writing', 'queued' ), true ) ) {
@@ -76,6 +80,13 @@ class AIN_Ajax {
     }
 
 
+    public static function unlock_stale_items() {
+        self::guard();
+        $count = method_exists( 'AIN_DB', 'reset_stale_writer_items' ) ? AIN_DB::reset_stale_writer_items( 10 ) : 0;
+        wp_send_json_success( sprintf( 'Unlocked %d stuck writing job(s).', (int) $count ) );
+    }
+
+
     public static function get_action_status() {
         self::guard();
         $type = sanitize_key( $_POST['type'] ?? '' );
@@ -86,6 +97,11 @@ class AIN_Ajax {
         if ( 'item' === $type ) {
             $state = get_transient( 'ain_async_item_status_' . $id );
             $item  = AIN_DB::get_item( $id );
+            if ( $item && method_exists( 'AIN_DB', 'is_writer_item_stale' ) && AIN_DB::is_writer_item_stale( $item, 45 ) ) {
+                AIN_DB::reset_stale_writer_items( 45 );
+                $item = AIN_DB::get_item( $id );
+                $state = array( 'state' => 'error', 'message' => 'This writing job was stuck and has been unlocked. Click Write again to retry.' );
+            }
             $data = is_array( $state ) ? $state : array();
             if ( $item ) {
                 $data['queue_status'] = $item->status;

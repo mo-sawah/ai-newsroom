@@ -24,6 +24,9 @@ class AIN_Writer {
     }
 
     public static function write_item( $item ) {
+        if ( function_exists( 'set_time_limit' ) ) {
+            @set_time_limit( 300 );
+        }
         $campaign = AIN_Campaigns::get( $item->campaign_id );
         if ( ! $campaign ) return new WP_Error( 'missing_campaign', 'Campaign not found for queue item.' );
 
