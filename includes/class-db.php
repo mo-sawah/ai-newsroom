@@ -116,6 +116,9 @@ class AIN_DB {
         if ( function_exists( 'ain_upgrade_wire_prompts_206' ) ) {
             ain_upgrade_wire_prompts_206();
         }
+        if ( function_exists( 'ain_upgrade_two_step_writer_prompts_212' ) ) {
+            ain_upgrade_two_step_writer_prompts_212();
+        }
 
         self::maybe_create_sample_campaign();
         update_option( 'ain_version', AIN_VERSION, false );
@@ -164,10 +167,6 @@ class AIN_DB {
                 'use_pexels'          => 0,
                 'insert_inline_media' => 1,
                 'image_style'         => 'modern editorial news image',
-            ),
-            'social_config'     => array(
-                'generate_social'    => 1,
-                'social_hook_action' => '',
             ),
             'schedule_config'   => array(
                 'interval_minutes' => 60,

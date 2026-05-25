@@ -52,7 +52,76 @@ class AIN_Writer {
         $source_links = self::source_links_for_prompt( $research_pack, $raw, $item );
         $settings = ain_get_settings();
 
-        $prompt_data = array(
+        $article_input = self::article_draft_prompt_data( $item, $campaign, $raw, $research_pack, $source_contexts, $source_links, $author_id, $author, $category_id, $category, $youtube_embed );
+        $draft = self::generate_article_draft( $article_input, $campaign, $settings, $item );
+        if ( is_wp_error( $draft ) ) {
+            AIN_DB::update_item( $item->id, array( 'status' => 'failed', 'error_message' => $draft->get_error_message() ) );
+            ain_log( 'error', 'Article draft writer failed.', array( 'error' => $draft->get_error_message() ), $campaign->id, $item->id );
+            return $draft;
+        }
+
+        $quality = max( 0, min( 100, (int) ( $draft['quality_score'] ?? $item->quality_score ) ) );
+        $production = self::generate_production_pack( $draft, $item, $campaign, $research_pack, $source_links, $internal_links, $category, $settings );
+        if ( is_wp_error( $production ) ) {
+            ain_log( 'warning', 'Production editor failed; using fallback SEO/media metadata.', array( 'error' => $production->get_error_message() ), $campaign->id, $item->id );
+            $production = self::fallback_production_pack( $draft, $item, $campaign, $research_pack, $category );
+        }
+
+        $final = self::merge_article_and_production( $draft, $production );
+        if ( empty( $final['content'] ) || empty( $final['final_title'] ) ) {
+            AIN_DB::update_item( $item->id, array( 'status' => 'failed', 'error_message' => 'AI writer returned invalid article data.' ) );
+            return new WP_Error( 'bad_writer_json', 'AI writer returned invalid article data.' );
+        }
+
+        $post_status = self::post_status_from_campaign( $campaign, $quality );
+
+        $content = (string) $final['content'];
+        $content = self::post_process_news_article( $content, $source_links );
+        if ( $youtube_embed && false === strpos( $content, 'youtube.com/embed' ) ) {
+            $content = $youtube_embed . "\n" . $content;
+        }
+        $content = self::ensure_external_source_link_rels( $content );
+        if ( ! empty( $campaign->media_config['insert_inline_media'] ) && ! empty( $final['chart']['rows'] ) && is_array( $final['chart']['rows'] ) ) {
+            $chart_html = AIN_Media::generate_chart_svg( $final['chart']['title'] ?? 'Key figures', $final['chart']['rows'] );
+            if ( $chart_html ) $content .= "\n" . $chart_html;
+        }
+
+        $postarr = array(
+            'post_title'    => sanitize_text_field( $final['final_title'] ),
+            'post_name'     => sanitize_title( $final['slug'] ?? $final['final_title'] ),
+            'post_excerpt'  => sanitize_textarea_field( $final['excerpt'] ?? '' ),
+            'post_content'  => wp_kses( $content, ain_allowed_post_html() ),
+            'post_status'   => $post_status,
+            'post_author'   => $author_id,
+            'post_category' => array( $category_id ),
+        );
+        $post_id = wp_insert_post( $postarr, true );
+        if ( is_wp_error( $post_id ) ) {
+            AIN_DB::update_item( $item->id, array( 'status' => 'failed', 'error_message' => $post_id->get_error_message() ) );
+            return $post_id;
+        }
+
+        self::apply_post_meta( $post_id, $final, $item, $campaign, $research_pack, $raw );
+        self::apply_tags( $post_id, $final['tags'] ?? array() );
+        self::maybe_featured_image( $post_id, $final, $item, $campaign );
+
+        $new_status = in_array( $post_status, array( 'publish', 'future' ), true ) ? 'published' : 'drafted';
+        if ( $quality < (int) ( $campaign->publishing_config['min_quality_score'] ?? 75 ) ) {
+            $new_status = 'needs_review';
+        }
+        AIN_DB::update_item( $item->id, array(
+            'status'        => $new_status,
+            'post_id'       => $post_id,
+            'quality_score' => $quality,
+            'error_message' => '',
+        ) );
+
+        ain_log( 'info', 'Article generated through two-step writer.', array( 'post_id' => $post_id, 'status' => $post_status, 'quality' => $quality, 'production_pass' => ! empty( $production ) ), $campaign->id, $item->id );
+        return array( 'post_id' => $post_id, 'message' => 'Article created: ' . $final['final_title'] );
+    }
+
+    private static function article_draft_prompt_data( $item, $campaign, $raw, $research_pack, $source_contexts, $source_links, $author_id, $author, $category_id, $category, $youtube_embed ) {
+        return array(
             'campaign' => array(
                 'name' => $campaign->name,
                 'type' => $campaign->type,
@@ -76,7 +145,7 @@ class AIN_Writer {
                 'title_direction' => $research_pack['story_desk_assignment']['title_direction'] ?? '',
             ),
             'source_contexts' => $source_contexts,
-            'verified_source_links_for_natural_attribution' => $source_links,
+            'verified_source_links_for_attribution_guidance' => $source_links,
             'research_pack' => $research_pack,
             'editorial_assignment' => $item->ai_summary,
             'target_word_count' => (int) ( $campaign->publishing_config['words_target'] ?? 700 ),
@@ -91,42 +160,33 @@ class AIN_Writer {
                 'name' => $category && ! is_wp_error( $category ) ? $category->name : '',
                 'rules' => ain_category_rules( $category_id ),
             ),
-            'internal_link_candidates' => $internal_links,
             'youtube_embed_allowed' => ! empty( $youtube_embed ),
             'press_release_rules' => 'press_release' === $campaign->type ? AIN_AI::mode_instructions( 'press_release' ) : '',
-            'media_rules' => $campaign->media_config,
-            'social_required' => ! empty( $campaign->social_config['generate_social'] ),
             'required_output' => array(
-                'final_title' => 'final article headline, preferably based on research_recommended_headline and strongest_news_peg; do not reuse the story desk working label unless it is already the strongest verified headline',
+                'final_title' => 'final article headline based on the strongest verified news peg; do not reuse the working label unless it is truly strongest',
                 'slug' => 'short-url-slug',
                 'excerpt' => 'one or two sentence excerpt',
-                'seo_title' => 'SEO title',
-                'meta_description' => '150-160 character meta description',
-                'focus_keyword' => 'main keyword',
-                'tags' => array( 'tag 1', 'tag 2' ),
-                'content' => 'Full HTML professional news article in inverted-pyramid style. Mostly use p tags. Use h2/h3 only for concrete factual sections, not generic explainers. Natural nofollow source links must be embedded in the relevant attribution sentence, not dumped at the end. Do not fabricate facts.',
-                'source_attribution' => 'short attribution note or empty string',
-                'inline_media_query' => 'short free image search query if useful',
-                'image_prompt' => 'featured image prompt if AI image is needed',
-                'chart' => array( 'title' => '', 'rows' => array( array( 'label' => '', 'value' => 0 ) ) ),
-                'social' => array( 'facebook' => '', 'x' => '', 'linkedin' => '', 'telegram' => '', 'push_title' => '', 'push_body' => '' ),
+                'content' => 'Full HTML professional news article. Mostly p tags. h2/h3 only when truly useful for a complex factual section. No SEO metadata, no tables, no charts, no social copy, no source list.',
                 'value_added' => array( 'original_angle' => '', 'context_added' => '', 'reader_question_answered' => '', 'why_this_matters' => '' ),
-                'quality_score' => '0-100',
-                'quality_notes' => 'brief notes on article value and risk',
+                'quality_score' => '0-100 editorial publishability score, not an SEO score',
+                'quality_notes' => 'brief notes on article value and factual risk',
             ),
         );
+    }
 
+    private static function generate_article_draft( $prompt_data, $campaign, $settings, $item ) {
         $current_date = date( 'l, F j, Y', current_time( 'timestamp' ) );
         $system = "CRITICAL CONTEXT: Today is {$current_date}. Treat all reporting relative to this date.\n\n"
             . trim( $campaign->ai_config['writer_prompt'] ?: $settings['writer_prompt'] ) . "\n\n"
-            . "Critical professional newsroom rules:\n"
-            . "1. SYNTHESIZE, DO NOT SUMMARIZE: Write like a Reuters or AP reporter. State verified facts directly as your own reporting. Do not mechanically write 'According to Source A' in every sentence.\n"
-            . "2. SMART ATTRIBUTION: Only use attribution for quotes, specific claims, exclusive scoops, or uncertain allegations. When you do attribute, hyperlink the text naturally (e.g., '<a href=...>court filings show</a>' or '<a href=...>police said</a>'). Never add a final source list or 'Sources:' section.\n"
-            . "3. INVERTED PYRAMID: The lede must be 35 words or fewer, answering who/what/when/where. Put the nut graph in paragraph 2 or 3.\n"
-            . "4. Use short paragraphs (1 to 3 sentences). Prefer active voice and concrete nouns. Avoid adjectives that editorialize.\n"
-            . "5. NO TEMPLATES: Do not use h2/h3 headings unless absolutely necessary for long, complex reports. Never use formulaic headings like 'Why it matters', 'Background', or 'Takeaways'.\n"
-            . "6. Do not fabricate quotes, data, names, dates, or source links.\n"
-            . "7. Return ONLY valid JSON, no markdown fences.";
+            . "ARTICLE DRAFT PASS ONLY:\n"
+            . "1. Write the article itself. Do not create SEO title, meta description, focus keyword, tags, charts, tables, image prompts, or social copy.\n"
+            . "2. Write like a senior wire-service reporter: synthesize verified facts directly, use attribution only where journalism requires it, and avoid mechanical source-by-source summaries.\n"
+            . "3. The lede should usually be 35 words or fewer and answer who/what/when/where. Put the nut graph in paragraph 2 or 3.\n"
+            . "4. Use short paragraphs, active voice, concrete nouns, neutral language, and natural human transitions.\n"
+            . "5. Do not add a final source list, references block, or generic headings such as 'Why it matters', 'Background', 'Context', 'Key takeaways', or 'The bottom line'.\n"
+            . "6. Links are optional in this draft. If you include any link, it must use a supplied verified URL and a natural attribution anchor. Never invent URLs.\n"
+            . "7. Do not fabricate quotes, data, names, dates, motives, or allegations.\n"
+            . "8. Return ONLY valid JSON, no markdown fences.";
 
         $response = AIN_AI::openrouter_chat(
             array(
@@ -140,70 +200,126 @@ class AIN_Writer {
                 'timeout' => 180,
             )
         );
-        if ( is_wp_error( $response ) ) {
-            AIN_DB::update_item( $item->id, array( 'status' => 'failed', 'error_message' => $response->get_error_message() ) );
-            ain_log( 'error', 'Writer failed.', array( 'error' => $response->get_error_message() ), $campaign->id, $item->id );
-            return $response;
-        }
-
+        if ( is_wp_error( $response ) ) return $response;
         $draft = ain_json_decode_loose( $response['content'] );
         if ( ! is_array( $draft ) || empty( $draft['content'] ) || empty( $draft['final_title'] ) ) {
-            AIN_DB::update_item( $item->id, array( 'status' => 'failed', 'error_message' => 'AI writer returned invalid JSON.' ) );
-            return new WP_Error( 'bad_writer_json', 'AI writer returned invalid JSON.' );
+            return new WP_Error( 'bad_writer_json', 'AI article draft writer returned invalid JSON.' );
         }
+        return $draft;
+    }
 
-        // No separate Quality Gate step. Use only the writer's own score/notes and campaign publish rules.
-        $quality = max( 0, min( 100, (int) ( $draft['quality_score'] ?? $item->quality_score ) ) );
-
-        $post_status = self::post_status_from_campaign( $campaign, $quality );
-
-        $content = (string) $draft['content'];
-        $content = self::post_process_news_article( $content, $source_links );
-        if ( $youtube_embed && false === strpos( $content, 'youtube.com/embed' ) ) {
-            $content = $youtube_embed . "\n" . $content;
-        }
-        $content = self::ensure_external_source_link_rels( $content );
-        if ( ! empty( $campaign->media_config['insert_inline_media'] ) && ! empty( $draft['chart']['rows'] ) && is_array( $draft['chart']['rows'] ) ) {
-            $chart_html = AIN_Media::generate_chart_svg( $draft['chart']['title'] ?? 'Key figures', $draft['chart']['rows'] );
-            if ( $chart_html ) $content .= "\n" . $chart_html;
-        }
-
-        $postarr = array(
-            'post_title'    => sanitize_text_field( $draft['final_title'] ),
-            'post_name'     => sanitize_title( $draft['slug'] ?? $draft['final_title'] ),
-            'post_excerpt'  => sanitize_textarea_field( $draft['excerpt'] ?? '' ),
-            'post_content'  => wp_kses( $content, ain_allowed_post_html() ),
-            'post_status'   => $post_status,
-            'post_author'   => $author_id,
-            'post_category' => array( $category_id ),
+    private static function generate_production_pack( $draft, $item, $campaign, $research_pack, $source_links, $internal_links, $category, $settings ) {
+        $max_internal = max( 0, (int) ( $settings['max_internal_links'] ?? 3 ) );
+        $payload = array(
+            'article_draft' => array(
+                'final_title' => $draft['final_title'] ?? '',
+                'slug' => $draft['slug'] ?? '',
+                'excerpt' => $draft['excerpt'] ?? '',
+                'content' => $draft['content'] ?? '',
+            ),
+            'story_context' => array(
+                'source_title' => $item->source_title,
+                'source_url' => $item->source_url,
+                'editorial_assignment' => $item->ai_summary,
+                'research_pack' => $research_pack,
+                'category' => $category && ! is_wp_error( $category ) ? $category->name : '',
+            ),
+            'verified_external_source_links' => array_slice( $source_links, 0, 6 ),
+            'internal_link_candidates' => array_slice( $internal_links, 0, $max_internal ),
+            'media_rules' => $campaign->media_config,
+            'required_output' => array(
+                'content' => 'same article HTML with only natural links added where useful; preserve voice and structure',
+                'seo_title' => 'Rank Math SEO title; no clickbait',
+                'meta_description' => '150-160 character Rank Math meta description',
+                'focus_keyword' => 'one natural main phrase only',
+                'tags' => array( '2-5 clean WordPress tags: people, companies, places, or concrete topics' ),
+                'source_attribution' => 'short attribution note or empty string',
+                'inline_media_query' => 'short free image search query if useful',
+                'image_prompt' => 'featured image prompt if AI image is needed',
+                'chart' => array( 'title' => '', 'rows' => array( array( 'label' => '', 'value' => 0 ) ) ),
+                'value_added' => array( 'original_angle' => '', 'context_added' => '', 'reader_question_answered' => '', 'why_this_matters' => '' ),
+            ),
         );
-        $post_id = wp_insert_post( $postarr, true );
-        if ( is_wp_error( $post_id ) ) {
-            AIN_DB::update_item( $item->id, array( 'status' => 'failed', 'error_message' => $post_id->get_error_message() ) );
-            return $post_id;
+
+        $system = "You are the production editor for AI Newsroom. Your job is NOT to rewrite the story.\n\n"
+            . "Production pass rules:\n"
+            . "1. Preserve the article's reporting, paragraph order, voice, and wording unless a small correction is needed for clarity or grammar.\n"
+            . "2. Add links only when they look natural in the sentence. Use at most 2 external source links and at most {$max_internal} internal links.\n"
+            . "3. Do not write awkward attribution such as 'Reuters reports', 'CNN coverage', or 'according to coverage' unless the draft already needs that attribution and the source is supplied.\n"
+            . "4. Preferred external anchors: the named organization, 'the company said', 'police said', 'court filings show', 'the ministry said', the exact report name, or another natural attribution phrase already supported by the paragraph.\n"
+            . "5. If a natural anchor is not present, do not force a link. Never add a source list. Never invent links.\n"
+            . "6. Create Rank Math fields: SEO title, meta description, focus keyword, and WordPress tags. Do not return any SEO score.\n"
+            . "7. Tables or charts are optional. Include chart rows only when the article contains real numeric values that benefit from a simple chart. Never invent numbers.\n"
+            . "8. Do not generate social media captions, push text, X posts, Facebook posts, Telegram posts, or LinkedIn posts.\n"
+            . "9. Return ONLY valid JSON, no markdown fences.";
+
+        $response = AIN_AI::openrouter_chat(
+            array(
+                array( 'role' => 'system', 'content' => $system ),
+                array( 'role' => 'user', 'content' => wp_json_encode( $payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ),
+            ),
+            array(
+                'model' => $settings['openrouter_writer_model'] ?: $settings['openrouter_text_model'],
+                'json' => true,
+                'temperature' => 0.15,
+                'timeout' => 120,
+            )
+        );
+        if ( is_wp_error( $response ) ) return $response;
+        $production = ain_json_decode_loose( $response['content'] );
+        if ( ! is_array( $production ) ) {
+            return new WP_Error( 'bad_production_json', 'AI production editor returned invalid JSON.' );
         }
+        unset( $production['social'], $production['seo_score'], $production['rank_math_score'] );
+        return $production;
+    }
 
-        self::apply_post_meta( $post_id, $draft, $item, $campaign, $research_pack, $raw );
-        self::apply_tags( $post_id, $draft['tags'] ?? array() );
-        self::maybe_featured_image( $post_id, $draft, $item, $campaign );
-
-        $new_status = in_array( $post_status, array( 'publish', 'future' ), true ) ? 'published' : 'drafted';
-        if ( $quality < (int) ( $campaign->publishing_config['min_quality_score'] ?? 75 ) ) {
-            $new_status = 'needs_review';
+    private static function fallback_production_pack( $draft, $item, $campaign, $research_pack, $category ) {
+        $plain = wp_strip_all_tags( $draft['excerpt'] ?? '' );
+        if ( ! $plain ) $plain = wp_trim_words( wp_strip_all_tags( $draft['content'] ?? '' ), 28, '' );
+        $title = sanitize_text_field( $draft['final_title'] ?? $item->suggested_title ?: $item->source_title );
+        $focus = trim( preg_replace( '/[^\pL\pN\s-]+/u', '', $title ) );
+        $focus = wp_trim_words( $focus, 5, '' );
+        $tags = array();
+        if ( ! empty( $research_pack['people_organizations'] ) && is_array( $research_pack['people_organizations'] ) ) {
+            foreach ( $research_pack['people_organizations'] as $entity ) {
+                if ( is_array( $entity ) ) $entity = $entity['name'] ?? '';
+                if ( $entity ) $tags[] = $entity;
+            }
         }
-        AIN_DB::update_item( $item->id, array(
-            'status'        => $new_status,
-            'post_id'       => $post_id,
-            'quality_score' => $quality,
-            'error_message' => '',
-        ) );
+        if ( $category && ! is_wp_error( $category ) && ! empty( $category->name ) ) $tags[] = $category->name;
+        return array(
+            'content' => $draft['content'] ?? '',
+            'seo_title' => $title,
+            'meta_description' => substr( sanitize_text_field( $plain ), 0, 160 ),
+            'focus_keyword' => $focus,
+            'tags' => array_slice( array_values( array_unique( array_filter( $tags ) ) ), 0, 5 ),
+            'source_attribution' => '',
+            'inline_media_query' => $focus ?: $title,
+            'image_prompt' => ( $draft['final_title'] ?? $item->image_prompt ?? $title ) . ', professional editorial news image, no text overlay',
+            'chart' => array( 'title' => '', 'rows' => array() ),
+            'value_added' => $draft['value_added'] ?? ( $research_pack['value_added'] ?? array() ),
+        );
+    }
 
-        if ( ! empty( $campaign->social_config['social_hook_action'] ) ) {
-            do_action( sanitize_key( $campaign->social_config['social_hook_action'] ), $post_id, $draft, $item, $campaign );
+    private static function merge_article_and_production( $draft, $production ) {
+        $final = is_array( $draft ) ? $draft : array();
+        if ( is_array( $production ) ) {
+            foreach ( $production as $key => $value ) {
+                if ( in_array( $key, array( 'social', 'seo_score', 'rank_math_score' ), true ) ) continue;
+                if ( null === $value || '' === $value ) continue;
+                $final[ $key ] = $value;
+            }
         }
-
-        ain_log( 'info', 'Article generated.', array( 'post_id' => $post_id, 'status' => $post_status, 'quality' => $quality, 'quality_source' => 'writer' ), $campaign->id, $item->id );
-        return array( 'post_id' => $post_id, 'message' => 'Article created: ' . $draft['final_title'] );
+        foreach ( array( 'final_title', 'slug', 'excerpt', 'content' ) as $key ) {
+            if ( empty( $final[ $key ] ) && ! empty( $draft[ $key ] ) ) $final[ $key ] = $draft[ $key ];
+        }
+        if ( empty( $final['seo_title'] ) ) $final['seo_title'] = $final['final_title'] ?? '';
+        if ( empty( $final['meta_description'] ) ) $final['meta_description'] = wp_trim_words( wp_strip_all_tags( $final['excerpt'] ?? $final['content'] ?? '' ), 26, '' );
+        if ( empty( $final['focus_keyword'] ) ) $final['focus_keyword'] = wp_trim_words( wp_strip_all_tags( $final['final_title'] ?? '' ), 5, '' );
+        if ( empty( $final['tags'] ) || ! is_array( $final['tags'] ) ) $final['tags'] = array();
+        if ( empty( $final['chart'] ) || ! is_array( $final['chart'] ) ) $final['chart'] = array( 'title' => '', 'rows' => array() );
+        return $final;
     }
 
     private static function source_contexts_for_item( $item, $raw ) {
@@ -335,10 +451,9 @@ class AIN_Writer {
             $linked = preg_replace( $pattern, '<a href="' . esc_url( $url ) . '" rel="nofollow noopener" target="_blank">$1</a>', $content, 1, $count );
             if ( $count ) return $linked;
         }
-        // Fallback: link a neutral attribution word near the top, instead of appending a source paragraph.
-        $pattern = '/\b(Reporting|reported|according to|filings show|documents show)\b(?![^<]*>)/i';
-        $linked = preg_replace( $pattern, '<a href="' . esc_url( $url ) . '" rel="nofollow noopener" target="_blank">$1</a>', $content, 1, $count );
-        return $count ? $linked : $content;
+        // Do not force a link onto generic words such as "reported" or "according to".
+        // If the publisher/source name is not naturally present, leave the article unlinked.
+        return $content;
     }
 
     private static function ensure_external_source_link_rels( $content ) {
@@ -400,7 +515,6 @@ class AIN_Writer {
         update_post_meta( $post_id, '_ain_quality_score', (int) ( $draft['quality_score'] ?? 0 ) );
         update_post_meta( $post_id, '_ain_quality_notes', sanitize_textarea_field( $draft['quality_notes'] ?? '' ) );
         update_post_meta( $post_id, '_ain_research_pack', wp_json_encode( $research_pack, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
-        update_post_meta( $post_id, '_ain_social_pack', wp_json_encode( $draft['social'] ?? array(), JSON_UNESCAPED_UNICODE ) );
         update_post_meta( $post_id, '_ain_value_added', wp_json_encode( $draft['value_added'] ?? ( $research_pack['value_added'] ?? array() ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
         if ( ! empty( $raw['story_fingerprint'] ) ) update_post_meta( $post_id, '_ain_story_fingerprint', sanitize_text_field( $raw['story_fingerprint'] ) );
         if ( ! empty( $raw['sources'] ) ) update_post_meta( $post_id, '_ain_source_urls', wp_json_encode( wp_list_pluck( $raw['sources'], 'url' ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
@@ -423,8 +537,10 @@ class AIN_Writer {
         $clean = array();
         foreach ( $tags as $tag ) {
             $tag = sanitize_text_field( $tag );
-            if ( $tag ) $clean[] = $tag;
+            $tag = trim( preg_replace( '/\s+/', ' ', $tag ) );
+            if ( $tag && strlen( $tag ) <= 60 ) $clean[ strtolower( $tag ) ] = $tag;
         }
+        $clean = array_slice( array_values( $clean ), 0, 5 );
         if ( $clean ) wp_set_post_tags( $post_id, $clean, false );
     }
 

@@ -209,11 +209,10 @@ class AIN_Admin {
                 'ai_config' => $defaults['ai_config'],
                 'publishing_config' => $defaults['publishing_config'],
                 'media_config' => $defaults['media_config'],
-                'social_config' => $defaults['social_config'],
-                'schedule_config' => $defaults['schedule_config'],
+                                'schedule_config' => $defaults['schedule_config'],
             );
         }
-        self::shell_start( $id ? 'Edit Campaign' : 'Add New Campaign', 'Each campaign runs separately with its own source, AI, schedule, media, publishing, and social settings.' );
+        self::shell_start( $id ? 'Edit Campaign' : 'Add New Campaign', 'Each campaign runs separately with its own source, AI, schedule, media, and publishing settings.' );
         ?>
         <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ain-form">
             <?php wp_nonce_field( 'ain_save_campaign' ); ?>
@@ -233,7 +232,7 @@ class AIN_Admin {
                 <button type="button" class="is-active" data-tab="source">1 Source</button>
                 <button type="button" data-tab="ai">2 AI Reporter</button>
                 <button type="button" data-tab="publish">3 Publishing</button>
-                <button type="button" data-tab="media">4 Media/Social</button>
+                <button type="button" data-tab="media">4 Media / Automation</button>
             </div>
 
             <div class="ain-tab-panel is-active" data-panel="source">
@@ -304,9 +303,8 @@ class AIN_Admin {
                         <?php self::select_raw( 'image_size', 'OpenRouter Image Size', array( '0.5K' => '0.5K', '1K' => '1K', '2K' => '2K', '4K' => '4K' ), $campaign->media_config['image_size'] ); ?>
                         <?php self::input( 'image_style', 'Image Style Prompt', $campaign->media_config['image_style'] ); ?>
                     </div>
-                    <div class="ain-card"><h2>Social / Hook</h2>
-                        <?php self::checkbox( 'generate_social', 'Generate Social Captions', $campaign->social_config['generate_social'] ); ?>
-                        <?php self::input( 'social_hook_action', 'Optional Social Plugin Hook Action', $campaign->social_config['social_hook_action'], 'text', 'example: my_social_plugin_share' ); ?>
+                    <div class="ain-card"><h2>Automation</h2>
+                        <p class="ain-muted">Social media generation has been removed from AI Newsroom. Use your dedicated social plugin after publishing.</p>
                         <?php self::checkbox( 'run_writer', 'Auto-write After Campaign Finds Stories', $campaign->schedule_config['run_writer'] ); ?>
                     </div>
                 </div>
@@ -473,7 +471,7 @@ class AIN_Admin {
             <?php wp_nonce_field( 'ain_save_settings' ); ?><input type="hidden" name="action" value="ain_save_settings">
             <div class="ain-grid ain-grid-2">
                 <div class="ain-card"><h2>API Keys</h2><?php self::input( 'openrouter_api_key', 'OpenRouter API Key', $s['openrouter_api_key'], 'password' ); ?><?php self::input( 'perplexity_api_key', 'Perplexity API Key', $s['perplexity_api_key'], 'password' ); ?><?php self::input( 'gnews_api_key', 'GNews API Key', $s['gnews_api_key'], 'password' ); ?><?php self::input( 'firecrawl_api_key', 'Firecrawl API Key', $s['firecrawl_api_key'], 'password' ); ?><?php self::input( 'youtube_api_key', 'YouTube API Key', $s['youtube_api_key'], 'password' ); ?><?php self::input( 'pexels_api_key', 'Pexels API Key', $s['pexels_api_key'], 'password' ); ?></div>
-                <div class="ain-card"><h2>Models & Defaults</h2><?php self::input( 'openrouter_text_model', 'Fallback OpenRouter Text Model', $s['openrouter_text_model'] ); ?><?php self::input( 'openrouter_research_model', 'Research / Story Desk Model', $s['openrouter_research_model'] ); ?><?php self::input( 'openrouter_writer_model', 'Article Writer Model', $s['openrouter_writer_model'] ); ?><?php self::input( 'openrouter_image_model', 'OpenRouter Image Model', $s['openrouter_image_model'] ); ?><?php self::select_raw( 'openrouter_image_aspect_ratio', 'Default Image Aspect Ratio', array( '16:9' => '16:9 Wide', '4:3' => '4:3 Standard', '1:1' => '1:1 Square', '9:16' => '9:16 Vertical' ), $s['openrouter_image_aspect_ratio'] ); ?><?php self::select_raw( 'openrouter_image_size', 'Default Image Size', array( '0.5K' => '0.5K', '1K' => '1K', '2K' => '2K', '4K' => '4K' ), $s['openrouter_image_size'] ); ?><?php self::input( 'perplexity_model', 'Perplexity Model', $s['perplexity_model'] ); ?><?php self::select_raw( 'default_story_strategy', 'Default Story Strategy', array( 'source_first' => 'Source-first', 'smart' => 'Smart Story Grouping', 'aggressive' => 'Aggressive Newsroom Mode' ), $s['default_story_strategy'] ); ?><?php self::checkbox( 'enable_openrouter_web_search', 'Enable OpenRouter Web Search By Default', $s['enable_openrouter_web_search'] ); ?><?php self::input( 'default_search_result_count', 'Default Outside Sources Per Research Pack', $s['default_search_result_count'], 'number' ); ?><?php self::select_raw( 'default_publish_mode', 'Default Publish Mode', array( 'draft' => 'Draft', 'pending' => 'Pending Review', 'publish' => 'Publish Immediately' ), $s['default_publish_mode'] ); ?><?php self::input( 'default_min_quality', 'Default Minimum Quality', $s['default_min_quality'], 'number' ); ?><?php self::input( 'default_words_target', 'Default Word Count', $s['default_words_target'], 'number' ); ?></div>
+                <div class="ain-card"><h2>Models & Defaults</h2><?php self::input( 'openrouter_text_model', 'Fallback OpenRouter Text Model', $s['openrouter_text_model'] ); ?><?php self::input( 'openrouter_research_model', 'Research / Story Desk Model', $s['openrouter_research_model'] ); ?><?php self::input( 'openrouter_writer_model', 'Article Writer Model', $s['openrouter_writer_model'] ); ?><?php self::input( 'openrouter_image_model', 'OpenRouter Image Model', $s['openrouter_image_model'] ); ?><?php self::select_raw( 'openrouter_image_aspect_ratio', 'Default Image Aspect Ratio', array( '16:9' => '16:9 Wide', '4:3' => '4:3 Standard', '1:1' => '1:1 Square', '9:16' => '9:16 Vertical' ), $s['openrouter_image_aspect_ratio'] ); ?><?php self::select_raw( 'openrouter_image_size', 'Default Image Size', array( '0.5K' => '0.5K', '1K' => '1K', '2K' => '2K', '4K' => '4K' ), $s['openrouter_image_size'] ); ?><?php self::input( 'perplexity_model', 'Perplexity Model', $s['perplexity_model'] ); ?><?php self::select_raw( 'default_story_strategy', 'Default Story Strategy', array( 'source_first' => 'Source-first', 'smart' => 'Smart Story Grouping', 'aggressive' => 'Aggressive Newsroom Mode' ), $s['default_story_strategy'] ); ?><?php self::checkbox( 'enable_openrouter_web_search', 'Enable OpenRouter Web Search By Default', $s['enable_openrouter_web_search'] ); ?><?php self::input( 'default_search_result_count', 'Default Outside Sources Per Research Pack', $s['default_search_result_count'], 'number' ); ?><?php self::select_raw( 'default_publish_mode', 'Default Publish Mode', array( 'draft' => 'Draft', 'pending' => 'Pending Review', 'publish' => 'Publish Immediately' ), $s['default_publish_mode'] ); ?><?php self::input( 'default_min_quality', 'Default Minimum Article Quality', $s['default_min_quality'], 'number' ); ?><?php self::input( 'default_words_target', 'Default Word Count', $s['default_words_target'], 'number' ); ?></div>
             </div>
             <div class="ain-grid ain-grid-2"><div class="ain-card"><h2>Global Voice</h2><?php self::textarea( 'site_voice', 'Site Voice', $s['site_voice'] ); ?><?php self::textarea( 'editor_prompt', 'Default Editor Prompt', $s['editor_prompt'] ); ?><?php self::textarea( 'writer_prompt', 'Default Writer Prompt', $s['writer_prompt'] ); ?></div><div class="ain-card"><h2>SEO / Internal Links</h2><?php self::checkbox( 'enable_internal_links', 'Enable Internal Link Suggestions', $s['enable_internal_links'] ); ?><?php self::input( 'max_internal_links', 'Max Internal Links', $s['max_internal_links'], 'number' ); ?><?php self::select_users( 'default_author', 'Default Author', $s['default_author'] ); ?><?php self::select_categories( 'default_category', 'Default Category', $s['default_category'] ); ?></div></div>
             <p><button type="submit" class="ain-btn ain-btn-primary ain-btn-large">Save Settings</button></p>

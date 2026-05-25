@@ -33,7 +33,7 @@ function ain_default_settings() {
         'max_internal_links'             => 3,
         'site_voice'                     => 'Professional wire-service news voice. Accurate, neutral, concise, and specific. Use inverted-pyramid structure: lede first, attribution high, context and background lower. Prefer short paragraphs and active voice. Avoid SEO filler, generic AI transitions, commentary tone, and templated section labels such as Why it matters, What happens next, What remains uncertain, Context, The bottom line, or Key takeaways.',
         'editor_prompt'                  => 'You are the assignment editor of a serious digital newsroom. Select and group only stories that have news value, freshness, relevance, and reader interest. Treat incoming URLs as raw reporting material. Group sources only when they describe the same specific development: the same event, announcement, filing, lawsuit, arrest, attack, policy decision, earnings result, launch, partnership, investigation, disaster, conflict update, or market-moving claim. Do not group sources only because they share the same person, company, country, industry, broad topic, or trip. If two stories share an entity but have different actions, claims, topic areas, consequences, or reader questions, keep them separate. Do not write the final article title; create only a working label, story brief, selection reason, research questions, and title direction. Reject thin, duplicate, irrelevant, promotional, or low-value items.',
-        'writer_prompt'                  => 'You are a wire-service style news reporter. Write a professional news article in inverted-pyramid style, not a blog post, newsletter, explainer template, or SEO article. The lede must give the newest verified development in 35 words or fewer where possible. Use the nut graph shortly after the lede to explain significance without opinion. Use short paragraphs, active voice, neutral attribution, and precise language. Link sources naturally on attribution words or source names inside the relevant paragraph. Do not add source-list paragraphs. Do not use formulaic headings such as Why it matters, What happens next, What remains uncertain, Context, Key takeaways, or The bottom line. Do not fabricate facts, quotes, numbers, dates, names, links, or motives.',
+        'writer_prompt'                  => 'You are a senior wire-service reporter writing only the article draft. Produce a polished, publication-ready news article in inverted-pyramid style, not a blog post, newsletter, explainer template, or SEO article. The lede must give the newest verified development in 35 words or fewer where possible. Use the nut graph shortly after the lede to explain significance without opinion. Use short paragraphs, active voice, neutral attribution, precise language, and natural human transitions. Do not create SEO metadata, social copy, charts, tables, image prompts, or source-list paragraphs. Do not fabricate facts, quotes, numbers, dates, names, links, or motives.',
     );
 }
 
@@ -108,6 +108,47 @@ function ain_upgrade_wire_prompts_206() {
             }
         }
         if ( $changed ) {
+            $wpdb->update( $table, array( 'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ), 'updated_at' => current_time( 'mysql' ) ), array( 'id' => (int) $row->id ) );
+        }
+    }
+}
+
+
+function ain_upgrade_two_step_writer_prompts_212() {
+    $settings = get_option( AIN_OPTION_KEY, array() );
+    if ( ! is_array( $settings ) ) return;
+    $defaults = ain_default_settings();
+    $old_writer_markers = array(
+        'Link sources naturally on attribution words or source names inside the relevant paragraph',
+        'Write a professional news article in inverted-pyramid style, not a blog post, newsletter, explainer template, or SEO article'
+    );
+    $changed = false;
+    foreach ( $old_writer_markers as $marker ) {
+        if ( ! empty( $settings['writer_prompt'] ) && false !== strpos( $settings['writer_prompt'], $marker ) ) {
+            $settings['writer_prompt'] = $defaults['writer_prompt'];
+            $changed = true;
+            break;
+        }
+    }
+    if ( $changed ) {
+        update_option( AIN_OPTION_KEY, $settings, false );
+    }
+
+    global $wpdb;
+    $table = ain_table( 'campaigns' );
+    $rows = $wpdb->get_results( "SELECT id, ai_config FROM {$table}" );
+    foreach ( $rows as $row ) {
+        $ai = ain_decode_json_field( $row->ai_config );
+        if ( ! is_array( $ai ) ) continue;
+        $campaign_changed = false;
+        foreach ( $old_writer_markers as $marker ) {
+            if ( ! empty( $ai['writer_prompt'] ) && false !== strpos( $ai['writer_prompt'], $marker ) ) {
+                $ai['writer_prompt'] = $defaults['writer_prompt'];
+                $campaign_changed = true;
+                break;
+            }
+        }
+        if ( $campaign_changed ) {
             $wpdb->update( $table, array( 'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ), 'updated_at' => current_time( 'mysql' ) ), array( 'id' => (int) $row->id ) );
         }
     }

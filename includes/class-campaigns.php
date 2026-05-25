@@ -51,10 +51,6 @@ class AIN_Campaigns {
                 'image_aspect_ratio'    => $settings['openrouter_image_aspect_ratio'],
                 'image_size'            => $settings['openrouter_image_size'],
             ),
-            'social_config' => array(
-                'generate_social'    => 1,
-                'social_hook_action' => '',
-            ),
             'schedule_config' => array(
                 'interval_minutes' => 60,
                 'run_writer'       => 1,
@@ -70,7 +66,7 @@ class AIN_Campaigns {
         $campaign->ai_config         = wp_parse_args( ain_decode_json_field( $campaign->ai_config ), $defaults['ai_config'] );
         $campaign->publishing_config = wp_parse_args( ain_decode_json_field( $campaign->publishing_config ), $defaults['publishing_config'] );
         $campaign->media_config      = wp_parse_args( ain_decode_json_field( $campaign->media_config ), $defaults['media_config'] );
-        $campaign->social_config     = wp_parse_args( ain_decode_json_field( $campaign->social_config ), $defaults['social_config'] );
+        $campaign->social_config     = array(); // Deprecated: retained only so older DB rows do not break external code.
         $campaign->schedule_config   = wp_parse_args( ain_decode_json_field( $campaign->schedule_config ), $defaults['schedule_config'] );
         return $campaign;
     }
@@ -150,11 +146,6 @@ class AIN_Campaigns {
             'image_size'           => isset( $request['image_size'] ) ? sanitize_text_field( wp_unslash( $request['image_size'] ) ) : '1K',
         );
 
-        $social = array(
-            'generate_social'    => isset( $request['generate_social'] ) ? 1 : 0,
-            'social_hook_action' => isset( $request['social_hook_action'] ) ? sanitize_key( wp_unslash( $request['social_hook_action'] ) ) : '',
-        );
-
         $schedule = array(
             'interval_minutes' => isset( $request['interval_minutes'] ) ? max( 5, (int) $request['interval_minutes'] ) : 60,
             'run_writer'       => isset( $request['run_writer'] ) ? 1 : 0,
@@ -174,7 +165,6 @@ class AIN_Campaigns {
             'ai_config'         => wp_parse_args( $ai, $defaults['ai_config'] ),
             'publishing_config' => wp_parse_args( $pub, $defaults['publishing_config'] ),
             'media_config'      => wp_parse_args( $media, $defaults['media_config'] ),
-            'social_config'     => wp_parse_args( $social, $defaults['social_config'] ),
             'schedule_config'   => wp_parse_args( $schedule, $defaults['schedule_config'] ),
             'next_run_at'       => self::next_run_time( $schedule['interval_minutes'] ),
             'last_error'        => '',
@@ -200,7 +190,6 @@ class AIN_Campaigns {
             'ai_config'         => $campaign->ai_config,
             'publishing_config' => $campaign->publishing_config,
             'media_config'      => $campaign->media_config,
-            'social_config'     => $campaign->social_config,
             'schedule_config'   => $campaign->schedule_config,
             'next_run_at'       => current_time( 'mysql' ),
         ) );
