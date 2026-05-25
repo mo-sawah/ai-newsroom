@@ -119,6 +119,15 @@ class AIN_DB {
         if ( function_exists( 'ain_upgrade_two_step_writer_prompts_212' ) ) {
             ain_upgrade_two_step_writer_prompts_212();
         }
+        if ( function_exists( 'ain_upgrade_production_prompt_213' ) ) {
+            ain_upgrade_production_prompt_213();
+        }
+        if ( function_exists( 'ain_upgrade_production_safety_214' ) ) {
+            ain_upgrade_production_safety_214();
+        }
+        if ( function_exists( 'ain_upgrade_production_editor_toggle_215' ) ) {
+            ain_upgrade_production_editor_toggle_215();
+        }
 
         self::maybe_create_sample_campaign();
         update_option( 'ain_version', AIN_VERSION, false );

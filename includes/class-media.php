@@ -125,6 +125,33 @@ class AIN_Media {
         return '<div class="ain-video-embed"><iframe width="560" height="315" src="' . esc_url( $src ) . '" title="YouTube video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe></div>';
     }
 
+    public static function generate_table_html( $table ) {
+        if ( empty( $table ) || ! is_array( $table ) ) return '';
+        $title = sanitize_text_field( $table['title'] ?? '' );
+        $headers = ! empty( $table['headers'] ) && is_array( $table['headers'] ) ? array_slice( $table['headers'], 0, 5 ) : array();
+        $rows = ! empty( $table['rows'] ) && is_array( $table['rows'] ) ? array_slice( $table['rows'], 0, 8 ) : array();
+        if ( empty( $headers ) || empty( $rows ) ) return '';
+
+        $html = '<div class="ain-inline-table">';
+        if ( $title ) $html .= '<h3>' . esc_html( $title ) . '</h3>';
+        $html .= '<table class="ain-smart-table"><thead><tr>';
+        foreach ( $headers as $header ) {
+            $html .= '<th scope="col">' . esc_html( sanitize_text_field( $header ) ) . '</th>';
+        }
+        $html .= '</tr></thead><tbody>';
+        foreach ( $rows as $row ) {
+            if ( ! is_array( $row ) ) continue;
+            $html .= '<tr>';
+            $cells = array_slice( array_values( $row ), 0, count( $headers ) );
+            for ( $i = 0; $i < count( $headers ); $i++ ) {
+                $html .= '<td>' . esc_html( sanitize_text_field( $cells[ $i ] ?? '' ) ) . '</td>';
+            }
+            $html .= '</tr>';
+        }
+        $html .= '</tbody></table></div>';
+        return $html;
+    }
+
     public static function generate_chart_svg( $title, $rows ) {
         if ( empty( $rows ) || ! is_array( $rows ) ) return '';
         $clean = array();

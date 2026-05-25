@@ -30,10 +30,13 @@ function ain_default_settings() {
         'default_author'                 => 'auto',
         'default_category'               => 'auto',
         'enable_internal_links'          => 1,
+        'enable_topic_hub_links'         => 1,
+        'enable_production_editor'       => 1,
         'max_internal_links'             => 3,
         'site_voice'                     => 'Professional wire-service news voice. Accurate, neutral, concise, and specific. Use inverted-pyramid structure: lede first, attribution high, context and background lower. Prefer short paragraphs and active voice. Avoid SEO filler, generic AI transitions, commentary tone, and templated section labels such as Why it matters, What happens next, What remains uncertain, Context, The bottom line, or Key takeaways.',
         'editor_prompt'                  => 'You are the assignment editor of a serious digital newsroom. Select and group only stories that have news value, freshness, relevance, and reader interest. Treat incoming URLs as raw reporting material. Group sources only when they describe the same specific development: the same event, announcement, filing, lawsuit, arrest, attack, policy decision, earnings result, launch, partnership, investigation, disaster, conflict update, or market-moving claim. Do not group sources only because they share the same person, company, country, industry, broad topic, or trip. If two stories share an entity but have different actions, claims, topic areas, consequences, or reader questions, keep them separate. Do not write the final article title; create only a working label, story brief, selection reason, research questions, and title direction. Reject thin, duplicate, irrelevant, promotional, or low-value items.',
         'writer_prompt'                  => 'You are a senior wire-service reporter writing only the article draft. Produce a polished, publication-ready news article in inverted-pyramid style, not a blog post, newsletter, explainer template, or SEO article. The lede must give the newest verified development in 35 words or fewer where possible. Use the nut graph shortly after the lede to explain significance without opinion. Use short paragraphs, active voice, neutral attribution, precise language, and natural human transitions. Do not create SEO metadata, social copy, charts, tables, image prompts, or source-list paragraphs. Do not fabricate facts, quotes, numbers, dates, names, links, or motives.',
+        'production_prompt'              => 'You are the production editor for AI Newsroom. Your job is to protect the finished article and prepare it for WordPress and Rank Math. Do not rewrite the article body. Do not change paragraph order, voice, lede, nut graph, quotes, numbers, or claims. Return production metadata and safe link instructions only. Add links only when the exact anchor text already exists naturally in the article and the URL is supplied. Use at most 2 external source links and respect the internal-link limit. Prefer category, tag, or relevant prior-post links only when they genuinely help the reader. Tables and charts are optional and should appear only when the story clearly contains structured facts or real comparable numbers. Never invent data. Create a clean SEO title, 150-160 character meta description, one natural focus keyword, and 2-5 WordPress tags. Do not generate social posts, push text, related boxes, or any SEO score.',
     );
 }
 
@@ -154,6 +157,110 @@ function ain_upgrade_two_step_writer_prompts_212() {
     }
 }
 
+function ain_upgrade_production_prompt_213() {
+    $settings = get_option( AIN_OPTION_KEY, array() );
+    if ( ! is_array( $settings ) ) $settings = array();
+    $defaults = ain_default_settings();
+    $changed = false;
+    if ( empty( $settings['production_prompt'] ) ) {
+        $settings['production_prompt'] = $defaults['production_prompt'];
+        $changed = true;
+    }
+    if ( $changed ) {
+        update_option( AIN_OPTION_KEY, $settings, false );
+    }
+
+    global $wpdb;
+    $table = ain_table( 'campaigns' );
+    $rows = $wpdb->get_results( "SELECT id, ai_config FROM {$table}" );
+    foreach ( $rows as $row ) {
+        $ai = ain_decode_json_field( $row->ai_config );
+        if ( ! is_array( $ai ) ) continue;
+        if ( empty( $ai['production_prompt'] ) ) {
+            $ai['production_prompt'] = $settings['production_prompt'];
+            $wpdb->update( $table, array( 'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ), 'updated_at' => current_time( 'mysql' ) ), array( 'id' => (int) $row->id ) );
+        }
+    }
+}
+
+
+function ain_upgrade_production_safety_214() {
+    $settings = get_option( AIN_OPTION_KEY, array() );
+    if ( ! is_array( $settings ) ) $settings = array();
+    $defaults = ain_default_settings();
+    $changed = false;
+
+    if ( ! isset( $settings['enable_topic_hub_links'] ) ) {
+        $settings['enable_topic_hub_links'] = $defaults['enable_topic_hub_links'];
+        $changed = true;
+    }
+    if ( empty( $settings['production_prompt'] ) || false !== strpos( $settings['production_prompt'], 'Make only small corrections for clarity, grammar, or broken HTML' ) ) {
+        $settings['production_prompt'] = $defaults['production_prompt'];
+        $changed = true;
+    }
+    if ( $changed ) update_option( AIN_OPTION_KEY, $settings, false );
+
+    global $wpdb;
+    $table = ain_table( 'campaigns' );
+    $rows = $wpdb->get_results( "SELECT id, ai_config, media_config FROM {$table}" );
+    foreach ( $rows as $row ) {
+        $row_changed = false;
+        $ai = ain_decode_json_field( $row->ai_config );
+        if ( ! is_array( $ai ) ) $ai = array();
+        if ( empty( $ai['production_prompt'] ) || false !== strpos( $ai['production_prompt'], 'Make only small corrections for clarity, grammar, or broken HTML' ) ) {
+            $ai['production_prompt'] = $settings['production_prompt'];
+            $row_changed = true;
+        }
+        $media = ain_decode_json_field( $row->media_config );
+        if ( ! is_array( $media ) ) $media = array();
+        if ( ! isset( $media['enable_smart_tables'] ) ) {
+            $media['enable_smart_tables'] = 1;
+            $row_changed = true;
+        }
+        if ( ! isset( $media['enable_smart_charts'] ) ) {
+            $media['enable_smart_charts'] = 1;
+            $row_changed = true;
+        }
+        if ( $row_changed ) {
+            $wpdb->update( $table, array(
+                'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
+                'media_config' => wp_json_encode( $media, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
+                'updated_at' => current_time( 'mysql' ),
+            ), array( 'id' => (int) $row->id ) );
+        }
+    }
+}
+
+
+
+function ain_upgrade_production_editor_toggle_215() {
+    $settings = get_option( AIN_OPTION_KEY, array() );
+    if ( ! is_array( $settings ) ) $settings = array();
+    $defaults = ain_default_settings();
+    $changed = false;
+
+    if ( ! isset( $settings['enable_production_editor'] ) ) {
+        $settings['enable_production_editor'] = $defaults['enable_production_editor'];
+        $changed = true;
+    }
+    if ( $changed ) update_option( AIN_OPTION_KEY, $settings, false );
+
+    global $wpdb;
+    $table = ain_table( 'campaigns' );
+    $rows = $wpdb->get_results( "SELECT id, ai_config FROM {$table}" );
+    foreach ( $rows as $row ) {
+        $ai = ain_decode_json_field( $row->ai_config );
+        if ( ! is_array( $ai ) ) $ai = array();
+        if ( ! isset( $ai['production_editor_mode'] ) ) {
+            $ai['production_editor_mode'] = 'global';
+            $wpdb->update( $table, array(
+                'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
+                'updated_at' => current_time( 'mysql' ),
+            ), array( 'id' => (int) $row->id ) );
+        }
+    }
+}
+
 function ain_get_settings() {
     $settings = get_option( AIN_OPTION_KEY, array() );
     return wp_parse_args( is_array( $settings ) ? $settings : array(), ain_default_settings() );
@@ -163,7 +270,7 @@ function ain_update_settings( $incoming ) {
     $defaults = ain_default_settings();
     $current  = ain_get_settings();
     $clean    = $current;
-    $checkbox_keys = array( 'enable_openrouter_web_search', 'enable_internal_links' );
+    $checkbox_keys = array( 'enable_openrouter_web_search', 'enable_internal_links', 'enable_topic_hub_links', 'enable_production_editor' );
     foreach ( $defaults as $key => $default ) {
         if ( ! array_key_exists( $key, $incoming ) ) {
             if ( in_array( $key, $checkbox_keys, true ) ) {
@@ -173,7 +280,7 @@ function ain_update_settings( $incoming ) {
         }
         if ( is_numeric( $default ) ) {
             $clean[ $key ] = (int) $incoming[ $key ];
-        } elseif ( in_array( $key, array( 'editor_prompt', 'writer_prompt', 'site_voice' ), true ) ) {
+        } elseif ( in_array( $key, array( 'editor_prompt', 'writer_prompt', 'production_prompt', 'site_voice' ), true ) ) {
             $clean[ $key ] = wp_kses_post( wp_unslash( $incoming[ $key ] ) );
         } else {
             $clean[ $key ] = sanitize_text_field( wp_unslash( $incoming[ $key ] ) );
@@ -412,6 +519,12 @@ function ain_allowed_post_html() {
     $allowed['rect'] = array( 'x' => true, 'y' => true, 'width' => true, 'height' => true, 'rx' => true, 'fill' => true, 'class' => true );
     $allowed['text'] = array( 'x' => true, 'y' => true, 'fill' => true, 'font-size' => true, 'font-weight' => true, 'class' => true );
     $allowed['line'] = array( 'x1' => true, 'x2' => true, 'y1' => true, 'y2' => true, 'stroke' => true, 'stroke-width' => true );
+    $allowed['table'] = array( 'class' => true );
+    $allowed['thead'] = array();
+    $allowed['tbody'] = array();
+    $allowed['tr'] = array();
+    $allowed['th'] = array( 'scope' => true );
+    $allowed['td'] = array();
     return $allowed;
 }
 

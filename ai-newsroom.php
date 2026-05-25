@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AI Newsroom
  * Description: Smart story-first AI newsroom automation for WordPress: campaign sources, story clustering, OpenRouter web research, editorial writing, media, and Rank Math SEO metadata.
- * Version: 2.0.12
+ * Version: 2.0.15
  * Author: Mohamed Sawah
  * Text Domain: ai-newsroom
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'AIN_VERSION', '2.0.12' );
+define( 'AIN_VERSION', '2.0.15' );
 define( 'AIN_FILE', __FILE__ );
 define( 'AIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIN_URL', plugin_dir_url( __FILE__ ) );

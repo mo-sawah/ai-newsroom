@@ -22,6 +22,8 @@ class AIN_Campaigns {
             'ai_config' => array(
                 'editor_prompt'       => $settings['editor_prompt'],
                 'writer_prompt'       => $settings['writer_prompt'],
+                'production_prompt'   => $settings['production_prompt'],
+                'production_editor_mode' => 'global',
                 'tone'                => $settings['site_voice'],
                 'story_strategy'      => $settings['default_story_strategy'],
                 'research_depth'      => 'balanced',
@@ -47,6 +49,8 @@ class AIN_Campaigns {
                 'use_pexels'            => 0,
                 'use_openrouter_image'  => 1,
                 'insert_inline_media'   => 1,
+                'enable_smart_tables'   => 1,
+                'enable_smart_charts'   => 1,
                 'image_style'           => 'modern professional editorial news image, no text overlay',
                 'image_aspect_ratio'    => $settings['openrouter_image_aspect_ratio'],
                 'image_size'            => $settings['openrouter_image_size'],
@@ -110,10 +114,14 @@ class AIN_Campaigns {
         if ( ! in_array( $story_strategy, array( 'source_first', 'smart', 'aggressive' ), true ) ) $story_strategy = 'smart';
         $research_depth = isset( $request['research_depth'] ) ? sanitize_key( wp_unslash( $request['research_depth'] ) ) : 'balanced';
         if ( ! in_array( $research_depth, array( 'fast', 'balanced', 'deep' ), true ) ) $research_depth = 'balanced';
+        $production_editor_mode = isset( $request['production_editor_mode'] ) ? sanitize_key( wp_unslash( $request['production_editor_mode'] ) ) : 'global';
+        if ( ! in_array( $production_editor_mode, array( 'global', 'enabled', 'disabled' ), true ) ) $production_editor_mode = 'global';
 
         $ai = array(
             'editor_prompt'       => isset( $request['editor_prompt'] ) ? wp_kses_post( wp_unslash( $request['editor_prompt'] ) ) : $defaults['ai_config']['editor_prompt'],
             'writer_prompt'       => isset( $request['writer_prompt'] ) ? wp_kses_post( wp_unslash( $request['writer_prompt'] ) ) : $defaults['ai_config']['writer_prompt'],
+            'production_prompt'   => isset( $request['production_prompt'] ) ? wp_kses_post( wp_unslash( $request['production_prompt'] ) ) : $defaults['ai_config']['production_prompt'],
+            'production_editor_mode' => $production_editor_mode,
             'tone'                => isset( $request['tone'] ) ? wp_kses_post( wp_unslash( $request['tone'] ) ) : $defaults['ai_config']['tone'],
             'story_strategy'      => $story_strategy,
             'research_depth'      => $research_depth,
@@ -141,6 +149,8 @@ class AIN_Campaigns {
             'use_pexels'           => isset( $request['use_pexels'] ) ? 1 : 0,
             'use_openrouter_image' => isset( $request['use_openrouter_image'] ) ? 1 : 0,
             'insert_inline_media'  => isset( $request['insert_inline_media'] ) ? 1 : 0,
+            'enable_smart_tables'  => isset( $request['enable_smart_tables'] ) ? 1 : 0,
+            'enable_smart_charts'  => isset( $request['enable_smart_charts'] ) ? 1 : 0,
             'image_style'          => isset( $request['image_style'] ) ? sanitize_text_field( wp_unslash( $request['image_style'] ) ) : '',
             'image_aspect_ratio'   => isset( $request['image_aspect_ratio'] ) ? sanitize_text_field( wp_unslash( $request['image_aspect_ratio'] ) ) : '16:9',
             'image_size'           => isset( $request['image_size'] ) ? sanitize_text_field( wp_unslash( $request['image_size'] ) ) : '1K',
