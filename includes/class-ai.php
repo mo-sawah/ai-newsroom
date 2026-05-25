@@ -395,17 +395,16 @@ class AIN_AI {
             ),
         );
 
+        $current_date = date( 'l, F j, Y', current_time( 'timestamp' ) );
         $system = trim( $campaign->ai_config['editor_prompt'] ?? $settings['editor_prompt'] ) . "\n\n"
-            . "You are a human-style newsroom story desk. You receive source cards and raw source items from RSS, Google News, Firecrawl, press releases, YouTube, or manual URLs. "
-            . "This instruction overrides any earlier grouping instruction that says to merge by company, person, country, broad topic, or visit alone. "
-            . "Your job is smart editorial clustering by SPECIFIC DEVELOPMENT, not keyword clustering. "
-            . "Group sources together only when they describe the same specific event, announcement, filing, lawsuit, arrest, attack, policy decision, earnings result, launch, partnership, investigation, disaster, conflict update, or market-moving claim. "
-            . "Do NOT group sources together only because they share the same person, company, country, industry, broad topic, or trip. Same entity is only a clue, not a grouping rule. "
-            . "If two sources share an entity but have different actions, claims, topic areas, consequences, or reader questions, keep them as separate story clusters. Example: during one Trump visit to China, defense-deal stories and trade-deal stories must be separate clusters. "
-            . "Use the source_cards fields topic_area, event_type, core_action, core_claim, news_peg, grouping_key, and reader_question to decide grouping. If in doubt, split rather than overmerge. "
-            . "Do NOT write the final headline. Create a working_label only, plus story_summary, selection_reason, grouping_logic, split_logic, editorial_angle, research_questions, facts_to_verify, and title_direction for the research editor. "
-            . "Reject thin, duplicate, stale, purely promotional, or low-value stories. The sources are reporting material, not articles to rewrite. Prefer precise hard-news/event-led plans over generic trend pieces. "
-            . "Return ONLY valid JSON with key \"stories\". No markdown.\n\n"
+            . "CRITICAL CONTEXT: Today is {$current_date}. Treat all timelines, 'yesterdays', and 'tomorrows' in the sources relative to this date.\n\n"
+            . "You are the Managing Editor of a human-style newsroom. You receive raw source items from various feeds. "
+            . "Your job is intelligent editorial clustering. Group sources into logical stories.\n"
+            . "- MAJOR EVENTS: Group sources covering the exact same concrete event (e.g., a specific lawsuit, a specific earnings call) into a single, focused story cluster.\n"
+            . "- ROUNDUPS & DIGESTS: If you see multiple minor events sharing the same broad narrative arc (e.g., three different politicians making minor statements about the same topic), group them into a single 'Roundup' or 'Digest' story.\n"
+            . "- Do NOT aggressively split sources just because they feature slightly different actions if they clearly belong in the same journalistic context.\n"
+            . "Create a working_label, story_summary, editorial_angle, and research questions for the research desk. "
+            . "Reject thin, duplicate, or purely promotional items. Return ONLY valid JSON with key \"stories\". No markdown.\n\n"
             . self::mode_instructions( $campaign->type );
 
         $model = $settings['openrouter_research_model'] ?: $settings['openrouter_text_model'];
@@ -494,7 +493,7 @@ class AIN_AI {
 
         // Safety merge only. The AI should already group stories. Code should prevent duplicates,
         // not override editorial differences such as Trump-China trade vs Trump-China defense.
-        $threshold = 'aggressive' === $strategy ? 0.46 : 0.56;
+        $threshold = 'aggressive' === $strategy ? 0.35 : 0.45;
         $merged = array();
         foreach ( $stories as $story ) {
             $story_text = self::cluster_match_text( $story );
@@ -615,12 +614,12 @@ class AIN_AI {
             ),
         );
 
-        $system = "You are a wire-service newsroom research editor. Build a source-grounded research pack for a reporter, not an article. "
+        $current_date = date( 'l, F j, Y', current_time( 'timestamp' ) );
+        $system = "CRITICAL CONTEXT: Today is {$current_date}. Base all your timeframes on this date.\n\n"
+            . "You are a wire-service newsroom research editor. Build a source-grounded research pack for a reporter, not an article. "
             . "Do not invent facts, quotes, numbers, names, dates, or source URLs. "
-            . "Respect the Story Desk's specific-development boundary. Do not broaden the story into a generic trend if the assignment is about one concrete action, filing, lawsuit, deal, attack, launch, vote, statement, or policy decision. "
             . "Identify the strongest verified news peg, the correct attribution chain, and the facts that must appear in the lede/nut graph. "
             . "The story desk working_label is NOT the final article title. Create headline_options and one recommended_headline only after checking the facts. "
-            . "Prefer precise event-led headlines when a concrete event, filing, disclosure, lawsuit, arrest, launch, statement, or official action exists. Use broad trend/explainer headlines only when the source pack genuinely lacks a concrete news peg. "
             . "Prepare source guidance for natural in-story attribution. Tell the writer which source names or attribution words should be linked inside paragraphs. Do not recommend a source list. "
             . "If web search is available, prefer official/primary sources, reputable newsrooms, government/company pages, court/regulatory docs, and direct statements. "
             . "Return ONLY valid JSON.";

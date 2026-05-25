@@ -116,20 +116,17 @@ class AIN_Writer {
             ),
         );
 
-        $system = trim( $campaign->ai_config['writer_prompt'] ?: $settings['writer_prompt'] ) . "\n\n"
+        $current_date = date( 'l, F j, Y', current_time( 'timestamp' ) );
+        $system = "CRITICAL CONTEXT: Today is {$current_date}. Treat all reporting relative to this date.\n\n"
+            . trim( $campaign->ai_config['writer_prompt'] ?: $settings['writer_prompt'] ) . "\n\n"
             . "Critical professional newsroom rules:\n"
-            . "1. Write like a wire-service reporter: neutral, direct, precise, and article-first. Do not write like a blog, SEO page, newsletter, briefing note, or AI explainer.\n"
-            . "2. Use the inverted pyramid. The lede should normally be one sentence and 35 words or fewer, answering who/what/when/where and the concrete new development.\n"
-            . "3. Put attribution high in the article. Use phrases such as 'according to', 'reported', 'said', 'filings show', or 'the company said'.\n"
-            . "4. Natural source links: hyperlink the attribution phrase or source name inside the relevant paragraph, for example '<a href=...>CNN reported</a>' or '<a href=...>filings show</a>'. Never add a final source list, source paragraph, or 'Sources:' section.\n"
-            . "5. Treat sources as reporting material. Build a fresh article from the combined source pack and research pack; do not rewrite one source or follow source structure.\n"
-            . "6. Do not copy source wording. Do not fabricate quotes, data, names, dates, events, motives, causation, or source links.\n"
-            . "7. Use short paragraphs of one to three sentences. Prefer active voice and concrete nouns. Avoid adjectives that editorialize.\n"
-            . "8. Use h2/h3 only if needed and only with concrete factual section labels, such as 'The vote', 'The filing', 'The investigation', or 'The market reaction'. Do not use template headings: Why it matters, What happens next, What remains uncertain, Context, Background, Key takeaways, or The bottom line.\n"
-            . "9. The story desk working_label is NOT the final article title. Use the research pack's recommended_headline/headline_options as guidance, then create the best final_title after reading the facts.\n"
-            . "10. If facts are uncertain or disputed, state precisely what is known and attribute the uncertainty. Avoid speculation.\n"
-            . "11. If this is a press release, strip promotional language and attribute claims to the organization.\n"
-            . "12. Return ONLY valid JSON, no markdown fences.";
+            . "1. SYNTHESIZE, DO NOT SUMMARIZE: Write like a Reuters or AP reporter. State verified facts directly as your own reporting. Do not mechanically write 'According to Source A' in every sentence.\n"
+            . "2. SMART ATTRIBUTION: Only use attribution for quotes, specific claims, exclusive scoops, or uncertain allegations. When you do attribute, hyperlink the text naturally (e.g., '<a href=...>court filings show</a>' or '<a href=...>police said</a>'). Never add a final source list or 'Sources:' section.\n"
+            . "3. INVERTED PYRAMID: The lede must be 35 words or fewer, answering who/what/when/where. Put the nut graph in paragraph 2 or 3.\n"
+            . "4. Use short paragraphs (1 to 3 sentences). Prefer active voice and concrete nouns. Avoid adjectives that editorialize.\n"
+            . "5. NO TEMPLATES: Do not use h2/h3 headings unless absolutely necessary for long, complex reports. Never use formulaic headings like 'Why it matters', 'Background', or 'Takeaways'.\n"
+            . "6. Do not fabricate quotes, data, names, dates, or source links.\n"
+            . "7. Return ONLY valid JSON, no markdown fences.";
 
         $response = AIN_AI::openrouter_chat(
             array(
