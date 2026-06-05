@@ -24,6 +24,31 @@ class AIN_Writer {
     }
 
     public static function write_item( $item ) {
+        try {
+            return self::write_item_inner( $item );
+        } catch ( Throwable $e ) {
+            $item_id = is_object( $item ) && isset( $item->id ) ? (int) $item->id : 0;
+            $campaign_id = is_object( $item ) && isset( $item->campaign_id ) ? (int) $item->campaign_id : 0;
+            $message = 'Writer crashed: ' . $e->getMessage();
+
+            if ( $item_id ) {
+                AIN_DB::update_item( $item_id, array(
+                    'status'        => 'failed',
+                    'error_message' => $message,
+                ) );
+            }
+
+            ain_log( 'error', 'Article writer crashed.', array(
+                'error' => $e->getMessage(),
+                'file'  => $e->getFile(),
+                'line'  => $e->getLine(),
+            ), $campaign_id, $item_id );
+
+            return new WP_Error( 'writer_crashed', $message );
+        }
+    }
+
+    private static function write_item_inner( $item ) {
         if ( function_exists( 'set_time_limit' ) ) {
             @set_time_limit( 300 );
         }
@@ -190,6 +215,20 @@ class AIN_Writer {
                 'quality_notes' => 'brief notes on article value and factual risk',
             ),
         );
+    }
+
+    private static function is_production_editor_enabled( $campaign, $settings ) {
+        $mode = isset( $campaign->ai_config['production_editor_mode'] ) ? sanitize_key( $campaign->ai_config['production_editor_mode'] ) : 'global';
+
+        if ( 'enabled' === $mode ) {
+            return true;
+        }
+
+        if ( 'disabled' === $mode ) {
+            return false;
+        }
+
+        return ! empty( $settings['enable_production_editor'] );
     }
 
     private static function generate_article_draft( $prompt_data, $campaign, $settings, $item ) {

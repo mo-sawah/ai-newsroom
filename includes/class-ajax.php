@@ -73,8 +73,24 @@ class AIN_Ajax {
             wp_send_json_success( array( 'background' => true, 'type' => 'item', 'id' => $id, 'message' => 'Article is already being generated.' ) );
         }
         AIN_DB::update_item( $id, array( 'status' => 'queued', 'error_message' => '' ) );
-        set_transient( 'ain_async_item_status_' . $id, array( 'state' => 'queued', 'message' => 'Article generation queued…' ), HOUR_IN_SECONDS );
-        wp_schedule_single_event( time() + 1, 'ain_async_write_item', array( $id ) );
+        set_transient( 'ain_async_item_status_' . $id, array(
+            'state'     => 'queued',
+            'message'   => 'Article generation queued…',
+            'queued_at' => current_time( 'timestamp', true ),
+        ), HOUR_IN_SECONDS );
+
+        $event_args = array( $id );
+        if ( ! wp_next_scheduled( 'ain_async_write_item', $event_args ) ) {
+            wp_schedule_single_event( time() + 1, 'ain_async_write_item', $event_args );
+        }
+
+        if ( ! wp_next_scheduled( 'ain_async_write_item', $event_args ) ) {
+            $message = 'Could not queue the background writer. Please check WP-Cron/loopback requests on this server.';
+            AIN_DB::update_item( $id, array( 'status' => 'failed', 'error_message' => $message ) );
+            set_transient( 'ain_async_item_status_' . $id, array( 'state' => 'error', 'message' => $message ), HOUR_IN_SECONDS );
+            wp_send_json_error( $message );
+        }
+
         if ( function_exists( 'ain_spawn_cron_async' ) ) ain_spawn_cron_async();
         wp_send_json_success( array( 'background' => true, 'type' => 'item', 'id' => $id, 'message' => 'Article generation started in background.' ) );
     }
@@ -103,6 +119,16 @@ class AIN_Ajax {
                 $state = array( 'state' => 'error', 'message' => 'This writing job was stuck and has been unlocked. Click Write again to retry.' );
             }
             $data = is_array( $state ) ? $state : array();
+            if ( $item && ! empty( $data['state'] ) && 'queued' === $data['state'] && ! empty( $data['queued_at'] ) ) {
+                $queued_for = current_time( 'timestamp', true ) - (int) $data['queued_at'];
+                if ( $queued_for > 300 && 'queued' === $item->status ) {
+                    $message = 'The background writer did not start within 5 minutes. The job was unlocked. Please click Write again; if it repeats, check WP-Cron/loopback requests.';
+                    AIN_DB::update_item( $id, array( 'status' => 'failed', 'error_message' => $message ) );
+                    $item = AIN_DB::get_item( $id );
+                    $data = array( 'state' => 'error', 'message' => $message );
+                    set_transient( 'ain_async_item_status_' . $id, $data, HOUR_IN_SECONDS );
+                }
+            }
             if ( $item ) {
                 $data['queue_status'] = $item->status;
                 $data['queue_status_label'] = ain_status_label( $item->status );

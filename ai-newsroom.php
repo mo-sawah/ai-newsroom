@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AI Newsroom
  * Description: Smart story-first AI newsroom automation for WordPress: campaign sources, story clustering, OpenRouter web research, editorial writing, media, and Rank Math SEO metadata.
- * Version: 2.0.16
+ * Version: 2.0.17
  * Author: Mohamed Sawah
  * Text Domain: ai-newsroom
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'AIN_VERSION', '2.0.16' );
+define( 'AIN_VERSION', '2.0.17' );
 define( 'AIN_FILE', __FILE__ );
 define( 'AIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIN_URL', plugin_dir_url( __FILE__ ) );
@@ -176,10 +176,14 @@ function ain_async_run_campaign_worker( $campaign_id ) {
 
 function ain_spawn_cron_async() {
     $cron_url = site_url( 'wp-cron.php?doing_wp_cron=' . rawurlencode( microtime( true ) ) );
+
+    // Use a realistic non-blocking timeout. Very tiny values such as 0.01 can fail
+    // before the HTTP request is actually sent on some hosts, leaving jobs stuck as queued.
     wp_remote_post( $cron_url, array(
-        'timeout'   => 0.01,
-        'blocking'  => false,
-        'sslverify' => apply_filters( 'https_local_ssl_verify', false ),
+        'timeout'     => 1,
+        'blocking'    => false,
+        'redirection' => 0,
+        'sslverify'   => apply_filters( 'https_local_ssl_verify', false ),
     ) );
 }
 
