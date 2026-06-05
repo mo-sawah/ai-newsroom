@@ -18,6 +18,19 @@ class AIN_Campaigns {
                 'exclude_domains'    => '',
                 'youtube_query'      => '',
                 'press_release_urls' => '',
+                'x_handles'          => '',
+                'x_user_ids'         => '',
+                'x_include_quotes'   => 1,
+                'x_include_replies'  => 0,
+                'x_include_retweets' => 0,
+                'x_max_per_account'  => 10,
+                'x_min_likes'        => 0,
+                'x_min_reposts'      => 0,
+                'x_min_replies'      => 0,
+                'x_min_views'        => 0,
+                'x_min_news_score'   => 55,
+                'x_embed_tweet'      => 1,
+                'x_embed_position'   => 'after_lede',
             ),
             'ai_config' => array(
                 'editor_prompt'       => $settings['editor_prompt'],
@@ -111,7 +124,23 @@ class AIN_Campaigns {
             'exclude_domains'    => isset( $request['exclude_domains'] ) ? sanitize_textarea_field( wp_unslash( $request['exclude_domains'] ) ) : '',
             'youtube_query'      => isset( $request['youtube_query'] ) ? sanitize_text_field( wp_unslash( $request['youtube_query'] ) ) : '',
             'press_release_urls' => isset( $request['press_release_urls'] ) ? wp_kses_post( wp_unslash( $request['press_release_urls'] ) ) : '',
+            'x_handles'          => isset( $request['x_handles'] ) ? sanitize_textarea_field( wp_unslash( $request['x_handles'] ) ) : '',
+            'x_user_ids'         => isset( $request['x_user_ids'] ) ? sanitize_textarea_field( wp_unslash( $request['x_user_ids'] ) ) : '',
+            'x_include_quotes'   => isset( $request['x_include_quotes'] ) ? 1 : 0,
+            'x_include_replies'  => isset( $request['x_include_replies'] ) ? 1 : 0,
+            'x_include_retweets' => isset( $request['x_include_retweets'] ) ? 1 : 0,
+            'x_max_per_account'  => isset( $request['x_max_per_account'] ) ? max( 1, min( 20, (int) $request['x_max_per_account'] ) ) : 10,
+            'x_min_likes'        => isset( $request['x_min_likes'] ) ? max( 0, (int) $request['x_min_likes'] ) : 0,
+            'x_min_reposts'      => isset( $request['x_min_reposts'] ) ? max( 0, (int) $request['x_min_reposts'] ) : 0,
+            'x_min_replies'      => isset( $request['x_min_replies'] ) ? max( 0, (int) $request['x_min_replies'] ) : 0,
+            'x_min_views'        => isset( $request['x_min_views'] ) ? max( 0, (int) $request['x_min_views'] ) : 0,
+            'x_min_news_score'   => isset( $request['x_min_news_score'] ) ? max( 0, min( 100, (int) $request['x_min_news_score'] ) ) : 55,
+            'x_embed_tweet'      => isset( $request['x_embed_tweet'] ) ? 1 : 0,
+            'x_embed_position'   => isset( $request['x_embed_position'] ) ? sanitize_key( wp_unslash( $request['x_embed_position'] ) ) : 'after_lede',
         );
+        if ( ! in_array( $source['x_embed_position'], array( 'after_lede', 'after_second_paragraph', 'before_fact_check' ), true ) ) {
+            $source['x_embed_position'] = 'after_lede';
+        }
 
         $story_strategy = isset( $request['story_strategy'] ) ? sanitize_key( wp_unslash( $request['story_strategy'] ) ) : 'smart';
         if ( ! in_array( $story_strategy, array( 'source_first', 'smart', 'aggressive' ), true ) ) $story_strategy = 'smart';

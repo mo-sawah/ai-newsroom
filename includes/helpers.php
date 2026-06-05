@@ -24,6 +24,7 @@ function ain_default_settings() {
         'firecrawl_api_key'              => '',
         'youtube_api_key'                => '',
         'pexels_api_key'                 => '',
+        'twitterapi_io_api_key'       => '',
         'default_publish_mode'           => 'draft',
         'default_min_quality'            => 80,
         'default_words_target'           => 850,
@@ -173,6 +174,19 @@ function ain_upgrade_fact_check_box_219() {
                 'updated_at' => current_time( 'mysql' ),
             ), array( 'id' => (int) $row->id ) );
         }
+    }
+}
+
+
+function ain_upgrade_x_twitter_monitor_227() {
+    $settings = get_option( AIN_OPTION_KEY, array() );
+    if ( ! is_array( $settings ) ) {
+        $settings = array();
+    }
+    $defaults = ain_default_settings();
+    if ( ! array_key_exists( 'twitterapi_io_api_key', $settings ) ) {
+        $settings['twitterapi_io_api_key'] = $defaults['twitterapi_io_api_key'];
+        update_option( AIN_OPTION_KEY, $settings, false );
     }
 }
 
@@ -665,12 +679,19 @@ function ain_allowed_post_html() {
     $allowed['details'] = array( 'class' => true, 'open' => true );
     $allowed['summary'] = array( 'class' => true, 'aria-label' => true );
     $allowed['section'] = array( 'class' => true, 'aria-label' => true );
-    foreach ( array( 'div', 'span', 'small', 'p', 'strong', 'em', 'ul', 'ol', 'li', 'h4' ) as $tag ) {
+    foreach ( array( 'div', 'span', 'small', 'p', 'strong', 'em', 'ul', 'ol', 'li', 'h4', 'blockquote' ) as $tag ) {
         if ( ! isset( $allowed[ $tag ] ) || ! is_array( $allowed[ $tag ] ) ) {
             $allowed[ $tag ] = array();
         }
         $allowed[ $tag ]['class'] = true;
     }
+    if ( ! isset( $allowed['blockquote'] ) || ! is_array( $allowed['blockquote'] ) ) {
+        $allowed['blockquote'] = array();
+    }
+    $allowed['blockquote']['cite'] = true;
+    $allowed['blockquote']['data-dnt'] = true;
+    $allowed['blockquote']['data-theme'] = true;
+    $allowed['blockquote']['data-conversation'] = true;
     return $allowed;
 }
 
@@ -689,6 +710,7 @@ function ain_category_rules( $term_id ) {
 function ain_campaign_types() {
     return array(
         'rss'           => 'RSS Monitor',
+        'x_twitter'     => 'X / Twitter Monitor',
         'gnews'         => 'GNews Search',
         'firecrawl'     => 'Firecrawl Site Monitor',
         'perplexity'    => 'Perplexity Research',

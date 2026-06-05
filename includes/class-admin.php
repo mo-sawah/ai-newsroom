@@ -247,8 +247,19 @@ class AIN_Admin {
                         <h2>Source Setup</h2>
                         <p class="ain-card-desc">Only the fields needed for the selected campaign type are shown. Hidden fields are ignored by that source type but preserved if you switch back later.</p>
 
-                        <div class="ain-source-field" data-source-types="rss gnews perplexity youtube">
+                        <div class="ain-source-field" data-source-types="rss gnews perplexity youtube x_twitter">
                             <?php self::input( 'topic_query', 'Topic / Search Query', $campaign->source_config['topic_query'], 'text', 'Example: Malta politics, Trump, Cyprus tourism' ); ?>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="x_twitter">
+                            <div class="ain-field-head"><strong>X / Twitter accounts</strong><small>Monitor public posts from selected X accounts using TwitterAPI.io polling.</small></div>
+                            <?php self::textarea( 'x_handles', 'X Handles To Monitor', $campaign->source_config['x_handles'] ?? '', 'One handle per line, e.g. @elonmusk, @Tesla, @WhiteHouse.' ); ?>
+                            <?php self::textarea( 'x_user_ids', 'Optional X User IDs', $campaign->source_config['x_user_ids'] ?? '', 'Optional: one numeric user ID per line. User IDs are more stable than handles if you have them.' ); ?>
+                            <div class="ain-grid-inline">
+                                <?php self::input( 'x_max_per_account', 'Max Posts Per Account', $campaign->source_config['x_max_per_account'] ?? 10, 'number' ); ?>
+                                <?php self::input( 'x_min_news_score', 'Minimum Newsworthiness Score', $campaign->source_config['x_min_news_score'] ?? 55, 'number' ); ?>
+                            </div>
+                            <p class="ain-help-text">Recommended score: 55. The X editor is intentionally smart/generous for checkable public-interest claims, even when the post sounds sarcastic or informal.</p>
                         </div>
 
                         <div class="ain-source-field ain-source-field-primary" data-source-types="rss">
@@ -298,6 +309,26 @@ class AIN_Admin {
 
                         <div class="ain-source-field" data-source-types="all">
                             <?php self::input( 'max_items', 'Max Items Per Run', $campaign->source_config['max_items'], 'number' ); ?>
+                        </div>
+
+                        <div class="ain-source-field" data-source-types="x_twitter">
+                            <div class="ain-field-head"><strong>X post filters</strong><small>Filter before AI so the story desk reviews only useful posts.</small></div>
+                            <div class="ain-check-grid">
+                                <?php self::checkbox( 'x_include_quotes', 'Include quote posts', $campaign->source_config['x_include_quotes'] ?? 1 ); ?>
+                                <?php self::checkbox( 'x_include_replies', 'Include replies', $campaign->source_config['x_include_replies'] ?? 0 ); ?>
+                                <?php self::checkbox( 'x_include_retweets', 'Include retweets', $campaign->source_config['x_include_retweets'] ?? 0 ); ?>
+                                <?php self::checkbox( 'x_embed_tweet', 'Embed original post in article', $campaign->source_config['x_embed_tweet'] ?? 1 ); ?>
+                            </div>
+                            <?php self::select_raw( 'x_embed_position', 'Tweet Embed Position', array( 'after_lede' => 'After lede', 'after_second_paragraph' => 'After second paragraph', 'before_fact_check' => 'Before Fact Check box' ), $campaign->source_config['x_embed_position'] ?? 'after_lede' ); ?>
+                            <div class="ain-grid-inline">
+                                <?php self::input( 'x_min_likes', 'Min Likes', $campaign->source_config['x_min_likes'] ?? 0, 'number' ); ?>
+                                <?php self::input( 'x_min_reposts', 'Min Reposts', $campaign->source_config['x_min_reposts'] ?? 0, 'number' ); ?>
+                            </div>
+                            <div class="ain-grid-inline">
+                                <?php self::input( 'x_min_replies', 'Min Replies', $campaign->source_config['x_min_replies'] ?? 0, 'number' ); ?>
+                                <?php self::input( 'x_min_views', 'Min Views', $campaign->source_config['x_min_views'] ?? 0, 'number' ); ?>
+                            </div>
+                            <p class="ain-help-text">Leave engagement minimums at 0 for public figures. A low-engagement post can still be major news if it contains a checkable allegation, announcement, or market/political claim.</p>
                         </div>
 
                         <div class="ain-source-field" data-source-types="rss gnews firecrawl press_release youtube manual">
@@ -554,7 +585,7 @@ class AIN_Admin {
         <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ain-form">
             <?php wp_nonce_field( 'ain_save_settings' ); ?><input type="hidden" name="action" value="ain_save_settings">
             <div class="ain-grid ain-grid-2">
-                <div class="ain-card"><h2>API Keys</h2><?php self::input( 'openrouter_api_key', 'OpenRouter API Key', $s['openrouter_api_key'], 'password' ); ?><?php self::input( 'perplexity_api_key', 'Perplexity API Key', $s['perplexity_api_key'], 'password' ); ?><?php self::input( 'gnews_api_key', 'GNews API Key', $s['gnews_api_key'], 'password' ); ?><?php self::input( 'firecrawl_api_key', 'Firecrawl API Key', $s['firecrawl_api_key'], 'password' ); ?><?php self::input( 'youtube_api_key', 'YouTube API Key', $s['youtube_api_key'], 'password' ); ?><?php self::input( 'pexels_api_key', 'Pexels API Key', $s['pexels_api_key'], 'password' ); ?></div>
+                <div class="ain-card"><h2>API Keys</h2><?php self::input( 'openrouter_api_key', 'OpenRouter API Key', $s['openrouter_api_key'], 'password' ); ?><?php self::input( 'perplexity_api_key', 'Perplexity API Key', $s['perplexity_api_key'], 'password' ); ?><?php self::input( 'gnews_api_key', 'GNews API Key', $s['gnews_api_key'], 'password' ); ?><?php self::input( 'firecrawl_api_key', 'Firecrawl API Key', $s['firecrawl_api_key'], 'password' ); ?><?php self::input( 'youtube_api_key', 'YouTube API Key', $s['youtube_api_key'], 'password' ); ?><?php self::input( 'twitterapi_io_api_key', 'TwitterAPI.io API Key', $s['twitterapi_io_api_key'] ?? '', 'password' ); ?><?php self::input( 'pexels_api_key', 'Pexels API Key', $s['pexels_api_key'], 'password' ); ?></div>
                 <div class="ain-card"><h2>Models & Defaults</h2><?php self::input( 'openrouter_text_model', 'Fallback OpenRouter Text Model', $s['openrouter_text_model'] ); ?><?php self::input( 'openrouter_research_model', 'Research / Story Desk Model', $s['openrouter_research_model'] ); ?><?php self::input( 'openrouter_writer_model', 'Article Writer Model', $s['openrouter_writer_model'] ); ?><?php self::input( 'openrouter_image_model', 'OpenRouter Image Model', $s['openrouter_image_model'] ); ?><?php self::select_raw( 'openrouter_image_aspect_ratio', 'Default Image Aspect Ratio', array( '16:9' => '16:9 Wide', '4:3' => '4:3 Standard', '1:1' => '1:1 Square', '9:16' => '9:16 Vertical' ), $s['openrouter_image_aspect_ratio'] ); ?><?php self::select_raw( 'openrouter_image_size', 'Default Image Size', array( '0.5K' => '0.5K', '1K' => '1K', '2K' => '2K', '4K' => '4K' ), $s['openrouter_image_size'] ); ?><?php self::input( 'perplexity_model', 'Perplexity Model', $s['perplexity_model'] ); ?><?php self::select_raw( 'default_story_strategy', 'Default Story Strategy', array( 'source_first' => 'Source-first', 'smart' => 'Smart Story Grouping', 'aggressive' => 'Aggressive Newsroom Mode' ), $s['default_story_strategy'] ); ?><?php self::checkbox( 'enable_openrouter_web_search', 'Enable OpenRouter Web Search By Default', $s['enable_openrouter_web_search'] ); ?><?php self::input( 'default_search_result_count', 'Default Outside Sources Per Research Pack', $s['default_search_result_count'], 'number' ); ?><?php self::select_raw( 'default_publish_mode', 'Default Publish Mode', array( 'draft' => 'Draft', 'pending' => 'Pending Review', 'publish' => 'Publish Immediately' ), $s['default_publish_mode'] ); ?><?php self::input( 'default_min_quality', 'Default Minimum Article Quality', $s['default_min_quality'], 'number' ); ?><?php self::input( 'default_words_target', 'Default Word Count', $s['default_words_target'], 'number' ); ?></div>
             </div>
             <div class="ain-grid ain-grid-2"><div class="ain-card"><h2>Global Voice</h2><?php self::textarea( 'site_voice', 'Site Voice', $s['site_voice'] ); ?><?php self::textarea( 'editor_prompt', 'Default Editor Prompt', $s['editor_prompt'] ); ?><?php self::textarea( 'writer_prompt', 'Default Article Writer Prompt', $s['writer_prompt'] ); ?><?php self::textarea( 'production_prompt', 'Default Production Editor Prompt', $s['production_prompt'], 'Used only when the production editor is enabled. Keep this strict so it does not rewrite the article body or add external source links inside the article body.' ); ?></div><div class="ain-card"><h2>SEO / Internal Links</h2><?php self::checkbox( 'enable_production_editor', 'Enable Production Editor By Default', $s['enable_production_editor'] ?? 1 ); ?><?php self::checkbox( 'enable_internal_links', 'Enable Internal Link Suggestions', $s['enable_internal_links'] ); ?><?php self::checkbox( 'enable_topic_hub_links', 'Include Category & Tag Hub Links', $s['enable_topic_hub_links'] ?? 1 ); ?><?php self::input( 'max_internal_links', 'Max Internal Links', $s['max_internal_links'], 'number' ); ?><?php self::select_users( 'default_author', 'Default Author', $s['default_author'] ); ?><?php self::select_categories( 'default_category', 'Default Category', $s['default_category'] ); ?><hr class="ain-soft-sep"><h2>Fact Check Box</h2><?php self::checkbox( 'enable_fact_check_box', 'Enable Fact Check Box By Default', $s['enable_fact_check_box'] ?? 1 ); ?><?php self::input( 'fact_check_title', 'Default Box Title', $s['fact_check_title'] ?? 'Fact Check & Sources' ); ?><?php self::checkbox( 'fact_check_default_open', 'Open Box By Default', $s['fact_check_default_open'] ?? 0 ); ?><?php self::input( 'fact_check_max_sources', 'Max Sources In Box', $s['fact_check_max_sources'] ?? 6, 'number' ); ?><?php self::checkbox( 'fact_check_show_verified_facts', 'Show Verified Facts', $s['fact_check_show_verified_facts'] ?? 1 ); ?><?php self::checkbox( 'fact_check_show_uncertain_claims', 'Show Caution / Unclear Claims', $s['fact_check_show_uncertain_claims'] ?? 1 ); ?></div></div>

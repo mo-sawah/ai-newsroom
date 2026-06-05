@@ -134,6 +134,9 @@ class AIN_DB {
         if ( function_exists( 'ain_upgrade_fact_check_box_219' ) ) {
             ain_upgrade_fact_check_box_219();
         }
+        if ( function_exists( 'ain_upgrade_x_twitter_monitor_227' ) ) {
+            ain_upgrade_x_twitter_monitor_227();
+        }
 
         self::maybe_create_sample_campaign();
         update_option( 'ain_version', AIN_VERSION, false );

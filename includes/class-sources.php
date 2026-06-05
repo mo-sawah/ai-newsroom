@@ -47,6 +47,8 @@ class AIN_Sources {
 
     private static function collect_raw_items( $campaign ) {
         switch ( $campaign->type ) {
+            case 'x_twitter':
+                return self::from_x_twitter( $campaign );
             case 'gnews':
                 return self::from_gnews( $campaign );
             case 'firecrawl':
@@ -135,6 +137,15 @@ class AIN_Sources {
             if ( self::similar_story_already_exists( $campaign->id, $fingerprint, $story ) ) {
                 ain_log( 'info', 'Skipped duplicate/similar story cluster.', array( 'fingerprint' => $fingerprint, 'working_label' => $story['working_label'] ?? '' ), $campaign->id );
                 continue;
+            }
+
+            if ( 'x_twitter' === $campaign->type ) {
+                $min_news_score = max( 0, min( 100, (int) ( $campaign->source_config['x_min_news_score'] ?? 55 ) ) );
+                $score = max( (int) ( $story['quality_score'] ?? 0 ), (int) ( $story['priority'] ?? 0 ) );
+                if ( $score < $min_news_score ) {
+                    ain_log( 'info', 'Skipped low-score X/Twitter item.', array( 'score' => $score, 'minimum' => $min_news_score, 'working_label' => $story['working_label'] ?? '' ), $campaign->id );
+                    continue;
+                }
             }
 
             $source_id = 'story_' . md5( $campaign->id . '|' . $fingerprint );
@@ -456,6 +467,139 @@ class AIN_Sources {
             );
         }
         return $items;
+    }
+
+
+    public static function from_x_twitter( $campaign ) {
+        $settings = ain_get_settings();
+        $api_key = trim( (string) ( $settings['twitterapi_io_api_key'] ?? '' ) );
+        if ( empty( $api_key ) ) {
+            return new WP_Error( 'missing_twitterapi_io', 'TwitterAPI.io API key is missing. Add it in AI Newsroom → Settings → API Keys.' );
+        }
+
+        $handles = ain_array_from_lines( $campaign->source_config['x_handles'] ?? '' );
+        $user_ids = ain_array_from_lines( $campaign->source_config['x_user_ids'] ?? '' );
+        if ( empty( $handles ) && empty( $user_ids ) ) {
+            return new WP_Error( 'missing_x_accounts', 'Add at least one X/Twitter handle or user ID.' );
+        }
+
+        $include_replies = ! empty( $campaign->source_config['x_include_replies'] );
+        $include_retweets = ! empty( $campaign->source_config['x_include_retweets'] );
+        $include_quotes = ! array_key_exists( 'x_include_quotes', $campaign->source_config ) || ! empty( $campaign->source_config['x_include_quotes'] );
+        $max_per_account = max( 1, min( 20, (int) ( $campaign->source_config['x_max_per_account'] ?? 10 ) ) );
+        $min_likes = max( 0, (int) ( $campaign->source_config['x_min_likes'] ?? 0 ) );
+        $min_reposts = max( 0, (int) ( $campaign->source_config['x_min_reposts'] ?? 0 ) );
+        $min_replies = max( 0, (int) ( $campaign->source_config['x_min_replies'] ?? 0 ) );
+        $min_views = max( 0, (int) ( $campaign->source_config['x_min_views'] ?? 0 ) );
+
+        $items = array();
+        $requests = array();
+        foreach ( $handles as $handle ) {
+            $handle = ltrim( trim( $handle ), '@' );
+            if ( $handle ) $requests[] = array( 'type' => 'userName', 'value' => $handle );
+        }
+        foreach ( $user_ids as $user_id ) {
+            $user_id = trim( $user_id );
+            if ( $user_id ) $requests[] = array( 'type' => 'userId', 'value' => $user_id );
+        }
+
+        $requests = array_slice( $requests, 0, 25 );
+        foreach ( $requests as $request ) {
+            $args = array( 'includeReplies' => $include_replies ? 'true' : 'false' );
+            $args[ $request['type'] ] = $request['value'];
+            $url = add_query_arg( $args, 'https://api.twitterapi.io/twitter/user/last_tweets' );
+            $response = wp_remote_get( $url, array(
+                'timeout' => 30,
+                'headers' => array( 'X-API-Key' => $api_key ),
+            ) );
+            if ( is_wp_error( $response ) ) {
+                ain_log( 'warning', 'TwitterAPI.io request failed.', array( 'account' => $request['value'], 'error' => $response->get_error_message() ), $campaign->id );
+                continue;
+            }
+            $code = (int) wp_remote_retrieve_response_code( $response );
+            $body = json_decode( wp_remote_retrieve_body( $response ), true );
+            if ( $code < 200 || $code >= 300 || ! is_array( $body ) || ( isset( $body['status'] ) && 'error' === $body['status'] ) ) {
+                ain_log( 'warning', 'TwitterAPI.io returned an error.', array( 'account' => $request['value'], 'code' => $code, 'message' => $body['message'] ?? '' ), $campaign->id );
+                continue;
+            }
+
+            $tweet_count = 0;
+            foreach ( (array) ( $body['tweets'] ?? array() ) as $tweet ) {
+                if ( ! is_array( $tweet ) ) continue;
+                if ( $tweet_count >= $max_per_account ) break;
+                if ( ! self::x_tweet_allowed_by_filters( $tweet, $include_replies, $include_retweets, $include_quotes, $min_likes, $min_reposts, $min_replies, $min_views ) ) continue;
+
+                $id = sanitize_text_field( $tweet['id'] ?? '' );
+                if ( ! $id ) continue;
+                $author = is_array( $tweet['author'] ?? null ) ? $tweet['author'] : array();
+                $username = sanitize_text_field( $author['userName'] ?? $request['value'] );
+                $username = ltrim( $username, '@' );
+                $display_name = sanitize_text_field( $author['name'] ?? ( $username ? '@' . $username : 'X' ) );
+                $tweet_url = esc_url_raw( $tweet['url'] ?? ( $username ? 'https://twitter.com/' . rawurlencode( $username ) . '/status/' . rawurlencode( $id ) : 'https://twitter.com/i/web/status/' . rawurlencode( $id ) ) );
+                $text = trim( wp_strip_all_tags( html_entity_decode( (string) ( $tweet['text'] ?? '' ) ) ) );
+                if ( '' === $text ) continue;
+
+                $metrics = array(
+                    'likes'   => (int) ( $tweet['likeCount'] ?? 0 ),
+                    'reposts' => (int) ( $tweet['retweetCount'] ?? 0 ),
+                    'replies' => (int) ( $tweet['replyCount'] ?? 0 ),
+                    'quotes'  => (int) ( $tweet['quoteCount'] ?? 0 ),
+                    'views'   => (int) ( $tweet['viewCount'] ?? 0 ),
+                );
+                $post_type = 'original_post';
+                if ( self::x_nested_tweet_present( $tweet['quoted_tweet'] ?? null ) ) $post_type = 'quote_post';
+                if ( ! empty( $tweet['isReply'] ) || ! empty( $tweet['inReplyToId'] ) ) $post_type = 'reply';
+                if ( self::x_nested_tweet_present( $tweet['retweeted_tweet'] ?? null ) ) $post_type = 'retweet';
+
+                $items[] = array(
+                    'source_id'   => 'x_' . $id,
+                    'source_name' => 'X / @' . $username,
+                    'title'       => '@' . $username . ': ' . wp_trim_words( $text, 18, '…' ),
+                    'description' => self::x_tweet_description( $text, $metrics, $post_type ),
+                    'url'         => $tweet_url,
+                    'published'   => sanitize_text_field( $tweet['createdAt'] ?? '' ),
+                    'image'       => esc_url_raw( $author['profilePicture'] ?? '' ),
+                    'x_tweet_id'  => $id,
+                    'x_author_username' => $username,
+                    'x_author_name' => $display_name,
+                    'x_post_type' => $post_type,
+                    'x_metrics'   => $metrics,
+                    'raw'         => $tweet,
+                );
+                $tweet_count++;
+            }
+        }
+
+        return $items;
+    }
+
+    private static function x_nested_tweet_present( $value ) {
+        if ( empty( $value ) ) return false;
+        if ( is_array( $value ) ) return ! empty( $value['id'] ) || ! empty( $value['text'] ) || ! empty( $value['url'] );
+        if ( is_object( $value ) ) return true;
+        if ( is_string( $value ) ) {
+            $v = strtolower( trim( $value ) );
+            return '' !== $v && 'null' !== $v && 'false' !== $v && '<unknown>' !== $v;
+        }
+        return true;
+    }
+
+    private static function x_tweet_allowed_by_filters( $tweet, $include_replies, $include_retweets, $include_quotes, $min_likes, $min_reposts, $min_replies, $min_views ) {
+        if ( ! $include_replies && ( ! empty( $tweet['isReply'] ) || ! empty( $tweet['inReplyToId'] ) ) ) return false;
+        if ( ! $include_retweets && self::x_nested_tweet_present( $tweet['retweeted_tweet'] ?? null ) ) return false;
+        if ( ! $include_quotes && self::x_nested_tweet_present( $tweet['quoted_tweet'] ?? null ) ) return false;
+        if ( $min_likes && (int) ( $tweet['likeCount'] ?? 0 ) < $min_likes ) return false;
+        if ( $min_reposts && (int) ( $tweet['retweetCount'] ?? 0 ) < $min_reposts ) return false;
+        if ( $min_replies && (int) ( $tweet['replyCount'] ?? 0 ) < $min_replies ) return false;
+        if ( $min_views && (int) ( $tweet['viewCount'] ?? 0 ) < $min_views ) return false;
+        return true;
+    }
+
+    private static function x_tweet_description( $text, $metrics, $post_type ) {
+        $parts = array();
+        $parts[] = 'X/Twitter ' . str_replace( '_', ' ', $post_type ) . ': ' . $text;
+        $parts[] = 'Engagement: ' . number_format_i18n( (int) ( $metrics['likes'] ?? 0 ) ) . ' likes, ' . number_format_i18n( (int) ( $metrics['reposts'] ?? 0 ) ) . ' reposts, ' . number_format_i18n( (int) ( $metrics['replies'] ?? 0 ) ) . ' replies, ' . number_format_i18n( (int) ( $metrics['views'] ?? 0 ) ) . ' views.';
+        return implode( ' ', $parts );
     }
 
     private static function absolute_url( $url, $base ) {

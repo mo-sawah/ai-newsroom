@@ -101,6 +101,12 @@
       desc: 'Monitor publisher RSS feeds, remove duplicates, and group fresh items into newsroom story assignments.',
       tip: 'RSS is best when the site has clean feeds. Add one feed per line, then let the story desk group related items.'
     },
+    x_twitter: {
+      badge: 'X',
+      title: 'X / Twitter Monitor',
+      desc: 'Poll selected X accounts with TwitterAPI.io, filter posts, and let AI decide which posts are newsworthy enough to become articles.',
+      tip: 'Use this for public figures, companies, officials, agencies, and journalists. Keep the newsworthiness score around 55 so important edgy or informal posts are not blocked too aggressively.'
+    },
     gnews: {
       badge: 'GNEWS',
       title: 'GNews Search',

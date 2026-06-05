@@ -76,6 +76,7 @@ class AIN_Writer {
         $author = get_user_by( 'id', $author_id );
         $category = get_term( $category_id, 'category' );
         $youtube_embed = self::youtube_embed_for_item( $item, $raw, $campaign );
+        $x_embed = self::x_tweet_embed_for_item( $item, $raw, $campaign );
         $source_links = self::source_links_for_prompt( $research_pack, $raw, $item );
         $settings = ain_get_settings();
 
@@ -119,6 +120,9 @@ class AIN_Writer {
             $content = $youtube_embed . "\n" . $content;
         }
         $content = self::strip_external_links_from_content( $content );
+        if ( $x_embed ) {
+            $content = self::insert_x_tweet_embed( $content, $x_embed, $campaign );
+        }
         if ( ! empty( $campaign->media_config['insert_inline_media'] ) ) {
             if ( ! empty( $campaign->media_config['enable_smart_tables'] ) && ! empty( $final['table']['rows'] ) && is_array( $final['table']['rows'] ) ) {
                 $table_html = AIN_Media::generate_table_html( $final['table'] );
@@ -208,6 +212,7 @@ class AIN_Writer {
                 'rules' => ain_category_rules( $category_id ),
             ),
             'youtube_embed_allowed' => ! empty( $youtube_embed ),
+            'x_tweet_embed_allowed' => ! empty( $raw['primary_source']['x_tweet_id'] ) || ! empty( $raw['sources'][0]['x_tweet_id'] ),
             'press_release_rules' => 'press_release' === $campaign->type ? AIN_AI::mode_instructions( 'press_release' ) : '',
             'required_output' => array(
                 'final_title' => 'final article headline based on the strongest verified news peg; do not reuse the working label unless it is truly strongest',
@@ -475,7 +480,10 @@ class AIN_Writer {
         $contexts = array();
         foreach ( array_slice( $sources, 0, 6 ) as $source ) {
             $url = $source['url'] ?? '';
-            $text = self::fetch_url_context( $url );
+            $text = self::source_text_context_from_item( $source );
+            if ( '' === $text ) {
+                $text = self::fetch_url_context( $url );
+            }
             $contexts[] = array(
                 'source_id' => $source['source_id'] ?? '',
                 'source_name' => $source['source_name'] ?? ain_safe_url_host( $url ),
@@ -507,6 +515,43 @@ class AIN_Writer {
     private static function youtube_embed_for_item( $item, $raw, $campaign ) {
         if ( 'youtube' !== $campaign->type && false === strpos( (string) $item->source_mode, 'youtube' ) ) return '';
         return AIN_Media::youtube_embed_from_item( $item );
+    }
+
+    private static function x_tweet_embed_for_item( $item, $raw, $campaign ) {
+        if ( 'x_twitter' !== $campaign->type && false === strpos( (string) $item->source_mode, 'x_twitter' ) ) return '';
+        if ( empty( $campaign->source_config['x_embed_tweet'] ) ) return '';
+        $source = array();
+        if ( ! empty( $raw['primary_source'] ) && is_array( $raw['primary_source'] ) ) {
+            $source = $raw['primary_source'];
+        } elseif ( ! empty( $raw['sources'][0] ) && is_array( $raw['sources'][0] ) ) {
+            $source = $raw['sources'][0];
+        }
+        $url = esc_url_raw( $source['url'] ?? $item->source_url );
+        if ( ! $url || false === strpos( $url, '/status/' ) ) return '';
+        return '<div class="ain-x-embed"><blockquote class="twitter-tweet" data-dnt="true" data-theme="light"><a href="' . esc_url( $url ) . '"></a></blockquote></div>';
+    }
+
+    private static function insert_x_tweet_embed( $content, $embed, $campaign ) {
+        if ( ! $embed || false !== strpos( $content, 'twitter-tweet' ) ) return $content;
+        $position = $campaign->source_config['x_embed_position'] ?? 'after_lede';
+        if ( 'before_fact_check' === $position ) {
+            return $content . "
+" . $embed;
+        }
+        $paragraphs = array();
+        if ( preg_match_all( '#<p[^>]*>.*?</p>#is', $content, $matches, PREG_OFFSET_CAPTURE ) ) {
+            $paragraphs = $matches[0];
+        }
+        $target_index = 'after_second_paragraph' === $position ? 1 : 0;
+        if ( isset( $paragraphs[ $target_index ] ) ) {
+            $paragraph_html = $paragraphs[ $target_index ][0];
+            $offset = $paragraphs[ $target_index ][1] + strlen( $paragraph_html );
+            return substr( $content, 0, $offset ) . "
+" . $embed . "
+" . substr( $content, $offset );
+        }
+        return $embed . "
+" . $content;
     }
 
     private static function resolve_author( $item, $campaign ) {
@@ -1067,6 +1112,8 @@ class AIN_Writer {
         update_post_meta( $post_id, '_ain_queue_id', (int) $item->id );
         update_post_meta( $post_id, '_ain_source_url', esc_url_raw( $item->source_url ) );
         update_post_meta( $post_id, '_ain_source_mode', sanitize_key( $item->source_mode ) );
+        if ( ! empty( $raw['primary_source']['x_tweet_id'] ) ) update_post_meta( $post_id, '_ain_x_tweet_id', sanitize_text_field( $raw['primary_source']['x_tweet_id'] ) );
+        if ( ! empty( $raw['primary_source']['url'] ) && false !== strpos( (string) $raw['primary_source']['url'], '/status/' ) ) update_post_meta( $post_id, '_ain_x_tweet_url', esc_url_raw( $raw['primary_source']['url'] ) );
         update_post_meta( $post_id, '_ain_quality_score', (int) ( $draft['quality_score'] ?? 0 ) );
         update_post_meta( $post_id, '_ain_quality_notes', sanitize_textarea_field( $draft['quality_notes'] ?? '' ) );
         update_post_meta( $post_id, '_ain_research_pack', wp_json_encode( $research_pack, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );

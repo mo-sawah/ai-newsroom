@@ -542,3 +542,25 @@ body.single .ain-fact-check-disclaimer{
     gap:8px!important;
   }
 }
+
+/* AI Newsroom X/Twitter embed */
+body .ain-x-embed,
+body .entry-content .ain-x-embed,
+body.single .ain-x-embed{
+    margin: 22px 0 !important;
+    padding: 0 !important;
+    max-width: 560px !important;
+}
+body .ain-x-embed .twitter-tweet,
+body .entry-content .ain-x-embed .twitter-tweet,
+body.single .ain-x-embed .twitter-tweet{
+    margin: 0 !important;
+}
+@media (max-width: 640px){
+    body .ain-x-embed,
+    body .entry-content .ain-x-embed,
+    body.single .ain-x-embed{
+        margin: 16px 0 !important;
+        max-width: 100% !important;
+    }
+}

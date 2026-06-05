@@ -201,6 +201,12 @@ class AIN_AI {
                 'description' => $item['description'] ?? '',
                 'url'         => $item['url'] ?? '',
                 'published'   => $item['published'] ?? '',
+                'x_post_type' => $item['x_post_type'] ?? '',
+                'x_metrics'   => $item['x_metrics'] ?? array(),
+                'x_author'    => array(
+                    'username' => $item['x_author_username'] ?? '',
+                    'name'     => $item['x_author_name'] ?? '',
+                ),
             );
         }
 
@@ -238,6 +244,9 @@ class AIN_AI {
             . "The card must identify the specific development being reported, not just the people or companies mentioned. "
             . "Very important: same entity does not always mean same story. For example, four articles about a president visiting China may split into two stories if two are about a defense agreement and two are about a trade agreement. "
             . "Focus on topic_area, event_type, core_action, core_claim, news_peg, and reader_question. Return one card per source_id. Return ONLY valid JSON with key source_cards.";
+        if ( 'x_twitter' === $campaign->type ) {
+            $system .= " For X/Twitter items, treat the post as a possible news peg. Do not dismiss a checkable, high-impact allegation or market/political statement merely because it is short, sarcastic, informal, or controversial. Mark vague memes and personal banter as low value, but preserve public-interest claims for the story desk.";
+        }
 
         $response = self::openrouter_chat(
             array(
@@ -343,10 +352,21 @@ class AIN_AI {
                 'description' => $item['description'] ?? '',
                 'url'         => $item['url'] ?? '',
                 'published'   => $item['published'] ?? '',
+                'x_post_type' => $item['x_post_type'] ?? '',
+                'x_metrics'   => $item['x_metrics'] ?? array(),
+                'x_author'    => array(
+                    'username' => $item['x_author_username'] ?? '',
+                    'name'     => $item['x_author_name'] ?? '',
+                ),
             );
         }
 
-        $source_cards = self::source_cards( $items, $campaign );
+        $source_cards = array();
+        if ( 'x_twitter' === $campaign->type ) {
+            foreach ( $items as $item ) $source_cards[] = ain_source_card_fallback( $item );
+        } else {
+            $source_cards = self::source_cards( $items, $campaign );
+        }
 
         $payload = array(
             'campaign' => array(
@@ -739,6 +759,8 @@ class AIN_AI {
 
     public static function mode_instructions( $type ) {
         switch ( $type ) {
+            case 'x_twitter':
+                return 'X / TWITTER MONITOR RULES: Treat each post as a possible news peg, not as a finished story. Be selective but do not be timid. Public-interest claims, explosive allegations, market-moving statements, policy claims, legal accusations, product/company announcements, government remarks, major public figure conflicts, and statements likely to trigger official responses can be newsworthy even if phrased casually, sarcastically, or like a joke. Do not reject an item merely because it is edgy, informal, short, or controversial. Instead, approve it when the author is influential, the claim is specific enough to verify, or the post could create political, legal, market, technology, public-safety, or reputation impact. For allegations or sensitive claims, require web verification before writing and clearly mark attribution/caution in the research pack. Reject only ordinary memes, vague insults with no checkable claim, pure engagement bait, personal banter, repeated slogans, and posts with no concrete public-interest development. Score realistically: 55-69 = worth review/queue if influential or checkable, 70-84 = strong news peg, 85+ = urgent or high-impact. The final article must not be “someone tweeted”; it must use web search to verify, contextualize, and explain the development.';
             case 'press_release':
                 return 'PRESS RELEASE RULES: Treat every source as a press release or organization announcement. Extract the real news value. Remove promotional language, hype, slogans, and marketing claims. Attribute claims to the company or organization. Add neutral context. Do not make the article sound like PR.';
             case 'perplexity':
