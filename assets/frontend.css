@@ -553,3 +553,58 @@ body.single .ain-fact-check-stats > span{
     width:100%!important;
   }
 }
+
+
+/* v2.0.24 — tighter title spacing + mobile title alignment */
+body .ain-fact-check-title,
+body .entry-content .ain-fact-check-title,
+body.single .ain-fact-check-title{
+  margin-top:-17px!important;
+}
+
+@media (max-width:700px){
+  body .ain-fact-check-box > summary.ain-fact-check-summary,
+  body .entry-content .ain-fact-check-box > summary.ain-fact-check-summary,
+  body.single .ain-fact-check-box > summary.ain-fact-check-summary{
+    display:grid!important;
+    grid-template-columns:40px minmax(0,1fr)!important;
+    grid-template-rows:auto auto!important;
+    align-items:center!important;
+    column-gap:10px!important;
+    row-gap:10px!important;
+    flex-wrap:initial!important;
+    padding:14px 16px!important;
+  }
+  body .ain-fact-check-icon,
+  body .entry-content .ain-fact-check-icon,
+  body.single .ain-fact-check-icon{
+    grid-column:1!important;
+    grid-row:1!important;
+    align-self:center!important;
+    justify-self:start!important;
+    margin:0!important;
+  }
+  body .ain-fact-check-title-wrap,
+  body .entry-content .ain-fact-check-title-wrap,
+  body.single .ain-fact-check-title-wrap{
+    grid-column:2!important;
+    grid-row:1!important;
+    align-self:center!important;
+    min-width:0!important;
+    width:auto!important;
+    max-width:100%!important;
+    margin:0!important;
+  }
+  body .ain-fact-check-meta,
+  body .entry-content .ain-fact-check-meta,
+  body.single .ain-fact-check-meta{
+    grid-column:1 / -1!important;
+    grid-row:2!important;
+    width:100%!important;
+    max-width:100%!important;
+    margin:0!important;
+    justify-self:stretch!important;
+    text-align:center!important;
+    white-space:normal!important;
+  }
+}
