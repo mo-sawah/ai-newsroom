@@ -494,57 +494,97 @@ class AIN_Sources {
 
         $items = array();
         $requests = array();
+        $seen_requests = array();
+
         foreach ( $handles as $handle ) {
-            $handle = ltrim( trim( $handle ), '@' );
-            if ( $handle ) $requests[] = array( 'type' => 'userName', 'value' => $handle );
+            $normalized = self::x_normalize_handle_input( $handle );
+            if ( ! $normalized ) continue;
+            $key = 'userName:' . strtolower( $normalized );
+            if ( isset( $seen_requests[ $key ] ) ) continue;
+            $seen_requests[ $key ] = true;
+            $requests[] = array( 'type' => 'userName', 'value' => $normalized, 'label' => '@' . $normalized );
         }
         foreach ( $user_ids as $user_id ) {
-            $user_id = trim( $user_id );
-            if ( $user_id ) $requests[] = array( 'type' => 'userId', 'value' => $user_id );
+            $user_id = preg_replace( '/[^0-9]/', '', (string) $user_id );
+            if ( ! $user_id ) continue;
+            $key = 'userId:' . $user_id;
+            if ( isset( $seen_requests[ $key ] ) ) continue;
+            $seen_requests[ $key ] = true;
+            $requests[] = array( 'type' => 'userId', 'value' => $user_id, 'label' => $user_id );
+        }
+
+        if ( empty( $requests ) ) {
+            return new WP_Error( 'missing_x_accounts', 'No valid X/Twitter handles or user IDs were found. Use @handle, handle, x.com/handle, or numeric user IDs.' );
         }
 
         $requests = array_slice( $requests, 0, 25 );
+        $totals = array(
+            'accounts' => count( $requests ),
+            'api_tweets' => 0,
+            'kept' => 0,
+            'skipped_reply' => 0,
+            'skipped_retweet' => 0,
+            'skipped_quote' => 0,
+            'skipped_engagement' => 0,
+            'skipped_empty' => 0,
+            'fallback_user_id_used' => 0,
+        );
+
         foreach ( $requests as $request ) {
-            $args = array( 'includeReplies' => $include_replies ? 'true' : 'false' );
-            $args[ $request['type'] ] = $request['value'];
-            $url = add_query_arg( $args, 'https://api.twitterapi.io/twitter/user/last_tweets' );
-            $response = wp_remote_get( $url, array(
-                'timeout' => 30,
-                'headers' => array( 'X-API-Key' => $api_key ),
-            ) );
-            if ( is_wp_error( $response ) ) {
-                ain_log( 'warning', 'TwitterAPI.io request failed.', array( 'account' => $request['value'], 'error' => $response->get_error_message() ), $campaign->id );
-                continue;
-            }
-            $code = (int) wp_remote_retrieve_response_code( $response );
-            $body = json_decode( wp_remote_retrieve_body( $response ), true );
-            if ( $code < 200 || $code >= 300 || ! is_array( $body ) || ( isset( $body['status'] ) && 'error' === $body['status'] ) ) {
-                ain_log( 'warning', 'TwitterAPI.io returned an error.', array( 'account' => $request['value'], 'code' => $code, 'message' => $body['message'] ?? '' ), $campaign->id );
+            $fetch = self::x_fetch_last_tweets( $api_key, $request, $include_replies, $campaign );
+            if ( is_wp_error( $fetch ) ) {
+                ain_log( 'warning', 'TwitterAPI.io request failed.', array( 'account' => $request['label'] ?? $request['value'], 'error' => $fetch->get_error_message() ), $campaign->id );
                 continue;
             }
 
-            $tweet_count = 0;
-            foreach ( (array) ( $body['tweets'] ?? array() ) as $tweet ) {
+            $tweets = $fetch['tweets'];
+
+            // Some usernames can fail or return empty on third-party APIs even when the account exists.
+            // If that happens, resolve the username to a user ID once and retry with userId, which TwitterAPI.io recommends as more stable.
+            if ( empty( $tweets ) && 'userName' === $request['type'] ) {
+                $resolved_id = self::x_resolve_user_id( $api_key, $request['value'], $campaign );
+                if ( $resolved_id ) {
+                    $fallback_request = array( 'type' => 'userId', 'value' => $resolved_id, 'label' => '@' . $request['value'] . ' / ' . $resolved_id );
+                    $fallback_fetch = self::x_fetch_last_tweets( $api_key, $fallback_request, $include_replies, $campaign );
+                    if ( ! is_wp_error( $fallback_fetch ) && ! empty( $fallback_fetch['tweets'] ) ) {
+                        $tweets = $fallback_fetch['tweets'];
+                        $totals['fallback_user_id_used']++;
+                    }
+                }
+            }
+
+            $totals['api_tweets'] += count( $tweets );
+            $kept_for_account = 0;
+
+            foreach ( $tweets as $tweet ) {
                 if ( ! is_array( $tweet ) ) continue;
-                if ( $tweet_count >= $max_per_account ) break;
-                if ( ! self::x_tweet_allowed_by_filters( $tweet, $include_replies, $include_retweets, $include_quotes, $min_likes, $min_reposts, $min_replies, $min_views ) ) continue;
+                if ( $kept_for_account >= $max_per_account ) break;
+
+                $filter = self::x_tweet_filter_reason( $tweet, $include_replies, $include_retweets, $include_quotes, $min_likes, $min_reposts, $min_replies, $min_views );
+                if ( 'keep' !== $filter ) {
+                    if ( isset( $totals[ 'skipped_' . $filter ] ) ) {
+                        $totals[ 'skipped_' . $filter ]++;
+                    }
+                    continue;
+                }
 
                 $id = sanitize_text_field( $tweet['id'] ?? '' );
-                if ( ! $id ) continue;
+                if ( ! $id ) { $totals['skipped_empty']++; continue; }
+
                 $author = is_array( $tweet['author'] ?? null ) ? $tweet['author'] : array();
-                $username = sanitize_text_field( $author['userName'] ?? $request['value'] );
+                $username = sanitize_text_field( $author['userName'] ?? ( 'userName' === $request['type'] ? $request['value'] : '' ) );
                 $username = ltrim( $username, '@' );
                 $display_name = sanitize_text_field( $author['name'] ?? ( $username ? '@' . $username : 'X' ) );
                 $tweet_url = esc_url_raw( $tweet['url'] ?? ( $username ? 'https://twitter.com/' . rawurlencode( $username ) . '/status/' . rawurlencode( $id ) : 'https://twitter.com/i/web/status/' . rawurlencode( $id ) ) );
                 $text = trim( wp_strip_all_tags( html_entity_decode( (string) ( $tweet['text'] ?? '' ) ) ) );
-                if ( '' === $text ) continue;
+                if ( '' === $text ) { $totals['skipped_empty']++; continue; }
 
                 $metrics = array(
-                    'likes'   => (int) ( $tweet['likeCount'] ?? 0 ),
-                    'reposts' => (int) ( $tweet['retweetCount'] ?? 0 ),
-                    'replies' => (int) ( $tweet['replyCount'] ?? 0 ),
-                    'quotes'  => (int) ( $tweet['quoteCount'] ?? 0 ),
-                    'views'   => (int) ( $tweet['viewCount'] ?? 0 ),
+                    'likes'   => self::x_metric( $tweet, array( 'likeCount', 'favorite_count', 'favoriteCount' ) ),
+                    'reposts' => self::x_metric( $tweet, array( 'retweetCount', 'retweet_count', 'repostCount' ) ),
+                    'replies' => self::x_metric( $tweet, array( 'replyCount', 'reply_count' ) ),
+                    'quotes'  => self::x_metric( $tweet, array( 'quoteCount', 'quote_count' ) ),
+                    'views'   => self::x_metric( $tweet, array( 'viewCount', 'view_count', 'views' ) ),
                 );
                 $post_type = 'original_post';
                 if ( self::x_nested_tweet_present( $tweet['quoted_tweet'] ?? null ) ) $post_type = 'quote_post';
@@ -566,11 +606,96 @@ class AIN_Sources {
                     'x_metrics'   => $metrics,
                     'raw'         => $tweet,
                 );
-                $tweet_count++;
+                $kept_for_account++;
+                $totals['kept']++;
             }
         }
 
+        ain_log( 'info', 'X/Twitter source fetch complete.', $totals, $campaign->id );
+
         return $items;
+    }
+
+    private static function x_normalize_handle_input( $handle ) {
+        $handle = trim( (string) $handle );
+        if ( '' === $handle ) return '';
+        if ( preg_match( '#(?:x\.com|twitter\.com)/(?:@)?([A-Za-z0-9_]{1,15})#i', $handle, $m ) ) {
+            $handle = $m[1];
+        }
+        $handle = ltrim( $handle, '@' );
+        $handle = preg_replace( '/[^A-Za-z0-9_]/', '', $handle );
+        if ( ! preg_match( '/^[A-Za-z0-9_]{1,15}$/', $handle ) ) return '';
+        return $handle;
+    }
+
+    private static function x_fetch_last_tweets( $api_key, $request, $include_replies, $campaign ) {
+        $args = array(
+            'includeReplies' => $include_replies ? 'true' : 'false',
+            'cursor' => '',
+        );
+        $args[ $request['type'] ] = $request['value'];
+        $url = add_query_arg( $args, 'https://api.twitterapi.io/twitter/user/last_tweets' );
+        $response = wp_remote_get( $url, array(
+            'timeout' => 30,
+            'headers' => array( 'X-API-Key' => $api_key ),
+        ) );
+        if ( is_wp_error( $response ) ) return $response;
+
+        $code = (int) wp_remote_retrieve_response_code( $response );
+        $raw_body = wp_remote_retrieve_body( $response );
+        $body = json_decode( $raw_body, true );
+        if ( $code < 200 || $code >= 300 || ! is_array( $body ) || ( isset( $body['status'] ) && 'error' === $body['status'] ) ) {
+            $message = is_array( $body ) ? ( $body['message'] ?? ( $body['msg'] ?? 'TwitterAPI.io request failed.' ) ) : 'TwitterAPI.io returned invalid JSON.';
+            return new WP_Error( 'twitterapi_io_error', $message );
+        }
+
+        return array(
+            'tweets' => self::x_extract_tweets_from_response( $body ),
+            'body' => $body,
+        );
+    }
+
+    private static function x_extract_tweets_from_response( $body ) {
+        if ( ! is_array( $body ) ) return array();
+        if ( isset( $body['tweets'] ) && is_array( $body['tweets'] ) ) return $body['tweets'];
+        if ( isset( $body['data']['tweets'] ) && is_array( $body['data']['tweets'] ) ) return $body['data']['tweets'];
+        if ( isset( $body['data'] ) && is_array( $body['data'] ) && isset( $body['data'][0] ) ) return $body['data'];
+        if ( isset( $body['results'] ) && is_array( $body['results'] ) ) return $body['results'];
+        return array();
+    }
+
+    private static function x_resolve_user_id( $api_key, $username, $campaign ) {
+        $username = self::x_normalize_handle_input( $username );
+        if ( ! $username ) return '';
+        $url = add_query_arg( array( 'userName' => $username ), 'https://api.twitterapi.io/twitter/user/info' );
+        $response = wp_remote_get( $url, array(
+            'timeout' => 20,
+            'headers' => array( 'X-API-Key' => $api_key ),
+        ) );
+        if ( is_wp_error( $response ) ) return '';
+        $code = (int) wp_remote_retrieve_response_code( $response );
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $code < 200 || $code >= 300 || ! is_array( $body ) || ( isset( $body['status'] ) && 'error' === $body['status'] ) ) return '';
+        $data = is_array( $body['data'] ?? null ) ? $body['data'] : $body;
+        return sanitize_text_field( $data['id'] ?? '' );
+    }
+
+    private static function x_metric( $tweet, $keys ) {
+        foreach ( $keys as $key ) {
+            if ( isset( $tweet[ $key ] ) ) return max( 0, (int) $tweet[ $key ] );
+        }
+        return 0;
+    }
+
+    private static function x_tweet_filter_reason( $tweet, $include_replies, $include_retweets, $include_quotes, $min_likes, $min_reposts, $min_replies, $min_views ) {
+        if ( ! $include_replies && ( ! empty( $tweet['isReply'] ) || ! empty( $tweet['inReplyToId'] ) ) ) return 'reply';
+        if ( ! $include_retweets && self::x_nested_tweet_present( $tweet['retweeted_tweet'] ?? null ) ) return 'retweet';
+        if ( ! $include_quotes && self::x_nested_tweet_present( $tweet['quoted_tweet'] ?? null ) ) return 'quote';
+        if ( $min_likes && self::x_metric( $tweet, array( 'likeCount', 'favorite_count', 'favoriteCount' ) ) < $min_likes ) return 'engagement';
+        if ( $min_reposts && self::x_metric( $tweet, array( 'retweetCount', 'retweet_count', 'repostCount' ) ) < $min_reposts ) return 'engagement';
+        if ( $min_replies && self::x_metric( $tweet, array( 'replyCount', 'reply_count' ) ) < $min_replies ) return 'engagement';
+        if ( $min_views && self::x_metric( $tweet, array( 'viewCount', 'view_count', 'views' ) ) < $min_views ) return 'engagement';
+        return 'keep';
     }
 
     private static function x_nested_tweet_present( $value ) {

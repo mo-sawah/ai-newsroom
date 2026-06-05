@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'AIN_VERSION', '2.0.27' );
+define( 'AIN_VERSION', '2.0.28' );
 define( 'AIN_FILE', __FILE__ );
 define( 'AIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIN_URL', plugin_dir_url( __FILE__ ) );

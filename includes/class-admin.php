@@ -249,11 +249,12 @@ class AIN_Admin {
 
                         <div class="ain-source-field" data-source-types="rss gnews perplexity youtube x_twitter">
                             <?php self::input( 'topic_query', 'Topic / Search Query', $campaign->source_config['topic_query'], 'text', 'Example: Malta politics, Trump, Cyprus tourism' ); ?>
+                            <p class="ain-help-text ain-x-topic-help">For X / Twitter Monitor, leave this blank to cover anything newsworthy from the monitored accounts. Use it only as an optional focus topic.</p>
                         </div>
 
                         <div class="ain-source-field ain-source-field-primary" data-source-types="x_twitter">
                             <div class="ain-field-head"><strong>X / Twitter accounts</strong><small>Monitor public posts from selected X accounts using TwitterAPI.io polling.</small></div>
-                            <?php self::textarea( 'x_handles', 'X Handles To Monitor', $campaign->source_config['x_handles'] ?? '', 'One handle per line, e.g. @elonmusk, @Tesla, @WhiteHouse.' ); ?>
+                            <?php self::textarea( 'x_handles', 'X Handles To Monitor', $campaign->source_config['x_handles'] ?? '', 'One account per line. You can use @WhiteHouse, WhiteHouse, https://x.com/WhiteHouse, or https://twitter.com/WhiteHouse.' ); ?>
                             <?php self::textarea( 'x_user_ids', 'Optional X User IDs', $campaign->source_config['x_user_ids'] ?? '', 'Optional: one numeric user ID per line. User IDs are more stable than handles if you have them.' ); ?>
                             <div class="ain-grid-inline">
                                 <?php self::input( 'x_max_per_account', 'Max Posts Per Account', $campaign->source_config['x_max_per_account'] ?? 10, 'number' ); ?>
