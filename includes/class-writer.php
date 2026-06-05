@@ -130,6 +130,11 @@ class AIN_Writer {
             }
         }
 
+        $fact_check_html = self::render_fact_check_box( $final['fact_check'] ?? array(), $campaign, $settings );
+        if ( $fact_check_html ) {
+            $content .= "\n" . $fact_check_html;
+        }
+
         $postarr = array(
             'post_title'    => sanitize_text_field( $final['final_title'] ),
             'post_name'     => sanitize_title( $final['slug'] ?? $final['final_title'] ),
@@ -831,7 +836,7 @@ class AIN_Writer {
         return '';
     }
 
-    private static function render_fact_check_box( $data, $campaign, $settings ) {
+    public static function render_fact_check_box( $data, $campaign, $settings ) {
         if ( empty( $data['enabled'] ) || ! is_array( $data ) ) return '';
         $title = sanitize_text_field( $data['title'] ?? self::fact_check_title( $campaign, $settings ) );
         $summary = sanitize_textarea_field( $data['summary'] ?? '' );

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: AI Newsroom
  * Description: Smart story-first AI newsroom automation for WordPress: campaign sources, story clustering, OpenRouter web research, editorial writing, media, and Rank Math SEO metadata.
- * Version: 2.0.19
+ * Version: 2.0.20
  * Author: Mohamed Sawah
  * Text Domain: ai-newsroom
  */
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'AIN_VERSION', '2.0.19' );
+define( 'AIN_VERSION', '2.0.20' );
 define( 'AIN_FILE', __FILE__ );
 define( 'AIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AIN_URL', plugin_dir_url( __FILE__ ) );
@@ -63,6 +63,36 @@ function ain_frontend_assets() {
     if ( is_singular( 'post' ) ) {
         wp_enqueue_style( 'ain-frontend', AIN_URL . 'assets/frontend.css', array(), AIN_VERSION );
     }
+}
+
+
+add_filter( 'the_content', 'ain_append_fact_check_box_to_content', 20 );
+function ain_append_fact_check_box_to_content( $content ) {
+    if ( is_admin() || ! is_singular( 'post' ) || ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    if ( false !== strpos( $content, 'ain-fact-check-box' ) ) {
+        return $content;
+    }
+    $raw = get_post_meta( get_the_ID(), '_ain_fact_check', true );
+    if ( empty( $raw ) ) {
+        return $content;
+    }
+    $data = is_array( $raw ) ? $raw : json_decode( (string) $raw, true );
+    if ( empty( $data['enabled'] ) || ! is_array( $data ) ) {
+        return $content;
+    }
+    if ( ! class_exists( 'AIN_Writer' ) || ! method_exists( 'AIN_Writer', 'render_fact_check_box' ) ) {
+        return $content;
+    }
+    $campaign_id = (int) get_post_meta( get_the_ID(), '_ain_campaign_id', true );
+    $campaign = $campaign_id && class_exists( 'AIN_Campaigns' ) ? AIN_Campaigns::get( $campaign_id ) : null;
+    if ( ! $campaign ) {
+        $campaign = (object) array( 'ai_config' => array() );
+    }
+    $box = AIN_Writer::render_fact_check_box( $data, $campaign, ain_get_settings() );
+    return $box ? $content . "
+" . $box : $content;
 }
 
 add_action( 'init', 'ain_setup_cron' );

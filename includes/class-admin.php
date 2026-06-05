@@ -214,7 +214,7 @@ class AIN_Admin {
         }
         self::shell_start( $id ? 'Edit Campaign' : 'Add New Campaign', 'Each campaign runs separately with its own source, AI, schedule, media, and publishing settings.' );
         ?>
-        <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ain-form">
+        <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ain-form ain-campaign-form" data-ain-campaign-form>
             <?php wp_nonce_field( 'ain_save_campaign' ); ?>
             <input type="hidden" name="action" value="ain_save_campaign">
             <input type="hidden" name="campaign_id" value="<?php echo esc_attr( $campaign->id ); ?>">
@@ -228,29 +228,94 @@ class AIN_Admin {
                 </div>
             </div>
 
-            <div class="ain-tabs">
-                <button type="button" class="is-active" data-tab="source">1 Source</button>
-                <button type="button" data-tab="ai">2 AI Reporter</button>
-                <button type="button" data-tab="publish">3 Publishing</button>
-                <button type="button" data-tab="media">4 Media / Automation</button>
+            <div class="ain-campaign-workflow">
+                <div class="ain-step-tabs ain-tabs" aria-label="Campaign setup steps">
+                    <button type="button" class="is-active" data-tab="source"><strong>1</strong><span>Source</span><small>Choose input</small></button>
+                    <button type="button" data-tab="ai"><strong>2</strong><span>AI Reporter</span><small>Prompts & research</small></button>
+                    <button type="button" data-tab="publish"><strong>3</strong><span>Publishing</span><small>Author, category, limits</small></button>
+                    <button type="button" data-tab="media"><strong>4</strong><span>Media</span><small>Images & automation</small></button>
+                </div>
+                <div class="ain-source-type-guide">
+                    <span class="ain-current-type-badge">RSS</span>
+                    <div><strong class="ain-current-type-title">RSS Monitor</strong><p class="ain-current-type-desc">Add RSS feeds and let AI Newsroom group fresh items into story assignments.</p></div>
+                </div>
             </div>
 
             <div class="ain-tab-panel is-active" data-panel="source">
-                <div class="ain-grid ain-grid-2">
-                    <div class="ain-card"><h2>Source Inputs</h2>
-                        <?php self::input( 'topic_query', 'Topic / Search Query', $campaign->source_config['topic_query'] ); ?>
-                        <?php self::textarea( 'rss_feeds', 'RSS Feeds', $campaign->source_config['rss_feeds'], 'One feed per line. Used by RSS campaigns and PR RSS sources.' ); ?>
-                        <?php self::textarea( 'urls', 'Website / Firecrawl URLs', $campaign->source_config['urls'], 'One category/listing URL per line.' ); ?>
-                        <?php self::textarea( 'press_release_urls', 'Press Release Sources', $campaign->source_config['press_release_urls'], 'PR feeds or listing pages, one per line.' ); ?>
-                        <?php self::textarea( 'manual_urls', 'Manual URLs', $campaign->source_config['manual_urls'], 'For manual research campaign.' ); ?>
+                <div class="ain-grid ain-grid-2 ain-source-setup-grid">
+                    <div class="ain-card ain-source-card">
+                        <h2>Source Setup</h2>
+                        <p class="ain-card-desc">Only the fields needed for the selected campaign type are shown. Hidden fields are ignored by that source type but preserved if you switch back later.</p>
+
+                        <div class="ain-source-field" data-source-types="rss gnews perplexity youtube">
+                            <?php self::input( 'topic_query', 'Topic / Search Query', $campaign->source_config['topic_query'], 'text', 'Example: Malta politics, Trump, Cyprus tourism' ); ?>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="rss">
+                            <div class="ain-field-head"><strong>RSS feeds</strong><small>Best for news sites, category feeds, and publisher feeds.</small></div>
+                            <?php self::textarea( 'rss_feeds', 'RSS Feed URLs', $campaign->source_config['rss_feeds'], 'One RSS feed per line. The campaign will monitor these feeds for new items.' ); ?>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="gnews">
+                            <div class="ain-field-head"><strong>GNews search</strong><small>Uses your topic query, language, and optional country code.</small></div>
+                            <p class="ain-help-text">Use this for broad news discovery when you do not have a fixed publisher feed.</p>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="firecrawl">
+                            <div class="ain-field-head"><strong>Website / Firecrawl URLs</strong><small>Use category pages, listing pages, or news index pages.</small></div>
+                            <?php self::textarea( 'urls', 'Website / Firecrawl URLs', $campaign->source_config['urls'], 'One category/listing URL per line. Firecrawl will extract the newest article links.' ); ?>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="press_release">
+                            <div class="ain-field-head"><strong>Press release sources</strong><small>Use official newsroom, PR, investor relations, or agency announcement pages.</small></div>
+                            <?php self::textarea( 'press_release_urls', 'Press Release Sources', $campaign->source_config['press_release_urls'], 'PR feeds or listing pages, one per line.' ); ?>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="youtube">
+                            <div class="ain-field-head"><strong>YouTube video desk</strong><small>Finds fresh videos and turns them into story assignments.</small></div>
+                            <?php self::input( 'youtube_query', 'YouTube Query', $campaign->source_config['youtube_query'], 'text', 'Example: Malta election, White House briefing' ); ?>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="manual">
+                            <div class="ain-field-head"><strong>Manual URL research</strong><small>Paste exact URLs you want the newsroom to process.</small></div>
+                            <?php self::textarea( 'manual_urls', 'Manual URLs', $campaign->source_config['manual_urls'], 'One article, document, or source URL per line.' ); ?>
+                        </div>
+
+                        <div class="ain-source-field ain-source-field-primary" data-source-types="perplexity">
+                            <div class="ain-field-head"><strong>Perplexity research desk</strong><small>Uses your topic query to find fresh story opportunities and citations.</small></div>
+                            <p class="ain-help-text">This mode does not need feeds or URLs. It works from the topic/search query above.</p>
+                        </div>
                     </div>
-                    <div class="ain-card"><h2>Discovery Filters</h2>
-                        <?php self::input( 'youtube_query', 'YouTube Query', $campaign->source_config['youtube_query'] ); ?>
-                        <div class="ain-grid-inline"><?php self::input( 'country_code', 'Country Code', $campaign->source_config['country_code'] ); ?><?php self::input( 'language_code', 'Language Code', $campaign->source_config['language_code'] ); ?></div>
-                        <?php self::input( 'max_items', 'Max Items Per Run', $campaign->source_config['max_items'], 'number' ); ?>
-                        <?php self::textarea( 'include_domains', 'Only Include Domains', $campaign->source_config['include_domains'], 'Optional: one domain per line.' ); ?>
-                        <?php self::textarea( 'exclude_domains', 'Exclude Domains', $campaign->source_config['exclude_domains'], 'Optional: one domain per line.' ); ?>
-                        <?php self::input( 'active_hours', 'Active Hours', $campaign->schedule_config['active_hours'], 'text', 'Example: 8-23, blank = all day' ); ?>
+
+                    <div class="ain-card ain-source-card">
+                        <h2>Discovery Rules</h2>
+                        <p class="ain-card-desc">These settings control freshness, filtering, schedule, and the amount of material reviewed per run.</p>
+
+                        <div class="ain-grid-inline">
+                            <div class="ain-source-field" data-source-types="gnews"><?php self::input( 'country_code', 'Country Code', $campaign->source_config['country_code'], 'text', 'us, au, mt' ); ?></div>
+                            <div class="ain-source-field" data-source-types="gnews"><?php self::input( 'language_code', 'Language Code', $campaign->source_config['language_code'], 'text', 'en' ); ?></div>
+                        </div>
+
+                        <div class="ain-source-field" data-source-types="all">
+                            <?php self::input( 'max_items', 'Max Items Per Run', $campaign->source_config['max_items'], 'number' ); ?>
+                        </div>
+
+                        <div class="ain-source-field" data-source-types="rss gnews firecrawl press_release youtube manual">
+                            <?php self::textarea( 'include_domains', 'Only Include Domains', $campaign->source_config['include_domains'], 'Optional: one domain per line. Leave blank to allow all discovered domains.' ); ?>
+                        </div>
+
+                        <div class="ain-source-field" data-source-types="rss gnews firecrawl press_release youtube manual">
+                            <?php self::textarea( 'exclude_domains', 'Exclude Domains', $campaign->source_config['exclude_domains'], 'Optional: one domain per line.' ); ?>
+                        </div>
+
+                        <div class="ain-source-field" data-source-types="all">
+                            <?php self::input( 'active_hours', 'Active Hours', $campaign->schedule_config['active_hours'], 'text', 'Example: 8-23, blank = all day' ); ?>
+                        </div>
+
+                        <div class="ain-source-help-panel">
+                            <strong>Source mode tip</strong>
+                            <p class="ain-source-mode-tip">RSS is best when the site has clean feeds. GNews is best for broad discovery. Firecrawl is best for sites without usable RSS feeds.</p>
+                        </div>
                     </div>
                 </div>
             </div>

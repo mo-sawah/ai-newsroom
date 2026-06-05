@@ -93,4 +93,73 @@
     $('.ain-tab-panel').removeClass('is-active');
     $('.ain-tab-panel[data-panel="'+tab+'"]').addClass('is-active');
   });
+
+  var campaignTypeMeta = {
+    rss: {
+      badge: 'RSS',
+      title: 'RSS Monitor',
+      desc: 'Monitor publisher RSS feeds, remove duplicates, and group fresh items into newsroom story assignments.',
+      tip: 'RSS is best when the site has clean feeds. Add one feed per line, then let the story desk group related items.'
+    },
+    gnews: {
+      badge: 'GNEWS',
+      title: 'GNews Search',
+      desc: 'Search broad news coverage by topic, country, and language using the GNews API.',
+      tip: 'GNews is best for broad discovery. Use a clear query and optional country/language filters.'
+    },
+    firecrawl: {
+      badge: 'CRAWL',
+      title: 'Firecrawl Site Monitor',
+      desc: 'Extract fresh article links from category, listing, or newsroom pages that do not have clean RSS feeds.',
+      tip: 'Firecrawl is best for pages without RSS. Add category or listing URLs, not individual article URLs.'
+    },
+    perplexity: {
+      badge: 'RESEARCH',
+      title: 'Perplexity Research',
+      desc: 'Create story opportunities from a research query and its cited sources.',
+      tip: 'Perplexity mode needs only a focused topic query. It is useful for finding news opportunities from wider research.'
+    },
+    press_release: {
+      badge: 'PR',
+      title: 'Press Release Monitor',
+      desc: 'Monitor official announcement, PR, investor-relations, and newsroom pages or feeds.',
+      tip: 'Use official source pages when possible. The writer will treat this material carefully and avoid promotional wording.'
+    },
+    youtube: {
+      badge: 'VIDEO',
+      title: 'YouTube Video Desk',
+      desc: 'Find fresh YouTube videos by query and turn them into story assignments with embeds when appropriate.',
+      tip: 'Use a specific YouTube query. This works well for briefings, speeches, interviews, and breaking video clips.'
+    },
+    manual: {
+      badge: 'MANUAL',
+      title: 'Manual URL Research',
+      desc: 'Process exact URLs you paste manually, useful for hand-picked stories or documents.',
+      tip: 'Manual mode is best when you already know which exact URLs should be turned into story assignments.'
+    }
+  };
+
+  function updateCampaignSourceFields(){
+    var form = $('[data-ain-campaign-form]');
+    if(!form.length) return;
+    var type = form.find('select[name="type"]').val() || 'rss';
+    var meta = campaignTypeMeta[type] || campaignTypeMeta.rss;
+
+    form.find('.ain-current-type-badge').text(meta.badge);
+    form.find('.ain-current-type-title').text(meta.title);
+    form.find('.ain-current-type-desc').text(meta.desc);
+    form.find('.ain-source-mode-tip').text(meta.tip);
+
+    form.find('[data-source-types]').each(function(){
+      var el = $(this);
+      var raw = (el.attr('data-source-types') || '').toLowerCase();
+      var list = raw.split(/\s+/);
+      var show = raw === 'all' || list.indexOf(type) !== -1;
+      el.toggleClass('ain-is-hidden', !show);
+    });
+  }
+
+  $(document).on('change', '[data-ain-campaign-form] select[name="type"]', updateCampaignSourceFields);
+  $(updateCampaignSourceFields);
+
 })(jQuery);

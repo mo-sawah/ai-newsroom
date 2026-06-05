@@ -130,7 +130,7 @@ class AIN_Media {
         $title = sanitize_text_field( $table['title'] ?? '' );
         $headers = ! empty( $table['headers'] ) && is_array( $table['headers'] ) ? array_slice( $table['headers'], 0, 5 ) : array();
         $rows = ! empty( $table['rows'] ) && is_array( $table['rows'] ) ? array_slice( $table['rows'], 0, 8 ) : array();
-        if ( empty( $headers ) || empty( $rows ) ) return '';
+        if ( empty( $headers ) || count( $rows ) < 3 ) return '';
 
         $html = '<div class="ain-inline-table">';
         if ( $title ) $html .= '<h3>' . esc_html( $title ) . '</h3>';
@@ -163,7 +163,7 @@ class AIN_Media {
             $max = max( $max, $value );
             $clean[] = array( 'label' => $label, 'value' => $value );
         }
-        if ( empty( $clean ) || $max <= 0 ) return '';
+        if ( count( $clean ) < 3 || $max <= 0 ) return '';
         $height = 80 + count( $clean ) * 42;
         $svg = '<div class="ain-inline-chart"><h3>' . esc_html( $title ?: 'Key figures' ) . '</h3><svg viewBox="0 0 760 ' . esc_attr( $height ) . '" role="img" aria-label="' . esc_attr( $title ) . '">';
         $y = 48;
