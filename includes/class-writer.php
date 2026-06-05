@@ -866,11 +866,7 @@ class AIN_Writer {
             </summary>
             <section class="ain-fact-check-body" aria-label="Fact check notes and sources">
                 <?php if ( $summary ) : ?><p class="ain-fact-check-lede"><?php echo esc_html( $summary ); ?></p><?php endif; ?>
-                <div class="ain-fact-check-stats">
-                    <span><strong><?php echo esc_html( count( $facts ) ); ?></strong><small>facts checked</small></span>
-                    <span><strong><?php echo esc_html( count( $sources ) ); ?></strong><small>sources reviewed</small></span>
-                    <span><strong><?php echo esc_html( count( $cautions ) ); ?></strong><small>caution notes</small></span>
-                </div>
+                <div class="ain-fact-check-stats"><div class="ain-fact-check-stat"><strong><?php echo esc_html( count( $facts ) ); ?></strong><small>facts checked</small></div><div class="ain-fact-check-stat"><strong><?php echo esc_html( count( $sources ) ); ?></strong><small>sources reviewed</small></div><div class="ain-fact-check-stat"><strong><?php echo esc_html( count( $cautions ) ); ?></strong><small>caution notes</small></div></div>
                 <?php if ( ! empty( $settings['fact_check_show_verified_facts'] ) && $facts ) : ?>
                     <h4>What was checked</h4>
                     <ul class="ain-fact-check-facts">

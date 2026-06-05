@@ -1,5 +1,5 @@
 /* AI Newsroom — public Fact Check & Sources box
-   v2.0.25: clean consolidated CSS, compact header, equal stat boxes, mobile spacing fix. */
+   v2.0.26: removes wpautop <br> grid artifacts, equal stat boxes, compact mobile layout. */
 
 body .ain-fact-check-box,
 body .entry-content .ain-fact-check-box,
@@ -231,6 +231,22 @@ body.single .ain-fact-check-stats{
   clear:none!important;
 }
 
+body .ain-fact-check-stats > br,
+body .entry-content .ain-fact-check-stats > br,
+body.single .ain-fact-check-stats > br,
+body .ain-fact-check-stats > p:empty,
+body .entry-content .ain-fact-check-stats > p:empty,
+body.single .ain-fact-check-stats > p:empty{
+  display:none!important;
+  width:0!important;
+  height:0!important;
+  margin:0!important;
+  padding:0!important;
+}
+
+body .ain-fact-check-stats > .ain-fact-check-stat,
+body .entry-content .ain-fact-check-stats > .ain-fact-check-stat,
+body.single .ain-fact-check-stats > .ain-fact-check-stat,
 body .ain-fact-check-stats > span,
 body .entry-content .ain-fact-check-stats > span,
 body.single .ain-fact-check-stats > span{
@@ -493,16 +509,19 @@ body.single .ain-fact-check-disclaimer{
   body.single .ain-fact-check-stats{
     grid-template-columns:1fr!important;
     column-gap:0!important;
-    row-gap:8px!important;
-    margin:0 0 14px!important;
+    row-gap:6px!important;
+    margin:0 0 12px!important;
   }
 
+  body .ain-fact-check-stats > .ain-fact-check-stat,
+  body .entry-content .ain-fact-check-stats > .ain-fact-check-stat,
+  body.single .ain-fact-check-stats > .ain-fact-check-stat,
   body .ain-fact-check-stats > span,
   body .entry-content .ain-fact-check-stats > span,
   body.single .ain-fact-check-stats > span{
     width:100%!important;
     margin:0!important;
-    padding:11px 13px!important;
+    padding:9px 12px!important;
   }
 
   body .ain-fact-check-body h4,
