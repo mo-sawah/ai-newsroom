@@ -131,6 +131,9 @@ class AIN_DB {
         if ( function_exists( 'ain_upgrade_no_external_article_links_218' ) ) {
             ain_upgrade_no_external_article_links_218();
         }
+        if ( function_exists( 'ain_upgrade_fact_check_box_219' ) ) {
+            ain_upgrade_fact_check_box_219();
+        }
 
         self::maybe_create_sample_campaign();
         update_option( 'ain_version', AIN_VERSION, false );

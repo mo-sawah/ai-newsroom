@@ -620,7 +620,7 @@ class AIN_AI {
             . "Do not invent facts, quotes, numbers, names, dates, or source URLs. "
             . "Identify the strongest verified news peg, the correct attribution chain, and the facts that must appear in the lede/nut graph. "
             . "The story desk working_label is NOT the final article title. Create headline_options and one recommended_headline only after checking the facts. "
-            . "Prepare source guidance for natural in-story attribution. Tell the writer which source names or attribution words should be linked inside paragraphs. Do not recommend a source list. "
+            . "Prepare source guidance for natural in-story attribution and for the Fact Check & Sources box. Do not recommend external links inside article paragraphs and do not recommend a source list inside the article body. "
             . "If web search is available, prefer official/primary sources, reputable newsrooms, government/company pages, court/regulatory docs, and direct statements. "
             . "Return ONLY valid JSON.";
 

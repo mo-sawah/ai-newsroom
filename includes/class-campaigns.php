@@ -24,6 +24,9 @@ class AIN_Campaigns {
                 'writer_prompt'       => $settings['writer_prompt'],
                 'production_prompt'   => $settings['production_prompt'],
                 'production_editor_mode' => 'global',
+                'fact_check_mode'     => 'global',
+                'fact_check_title'    => '',
+                'fact_check_max_sources' => '',
                 'tone'                => $settings['site_voice'],
                 'story_strategy'      => $settings['default_story_strategy'],
                 'research_depth'      => 'balanced',
@@ -116,6 +119,8 @@ class AIN_Campaigns {
         if ( ! in_array( $research_depth, array( 'fast', 'balanced', 'deep' ), true ) ) $research_depth = 'balanced';
         $production_editor_mode = isset( $request['production_editor_mode'] ) ? sanitize_key( wp_unslash( $request['production_editor_mode'] ) ) : 'global';
         if ( ! in_array( $production_editor_mode, array( 'global', 'enabled', 'disabled' ), true ) ) $production_editor_mode = 'global';
+        $fact_check_mode = isset( $request['fact_check_mode'] ) ? sanitize_key( wp_unslash( $request['fact_check_mode'] ) ) : 'global';
+        if ( ! in_array( $fact_check_mode, array( 'global', 'enabled', 'disabled' ), true ) ) $fact_check_mode = 'global';
 
         $editor_prompt = isset( $request['editor_prompt'] ) ? wp_kses_post( wp_unslash( $request['editor_prompt'] ) ) : $defaults['ai_config']['editor_prompt'];
         $writer_prompt = isset( $request['writer_prompt'] ) ? wp_kses_post( wp_unslash( $request['writer_prompt'] ) ) : $defaults['ai_config']['writer_prompt'];
@@ -130,6 +135,9 @@ class AIN_Campaigns {
             'writer_prompt'       => $writer_prompt,
             'production_prompt'   => $production_prompt,
             'production_editor_mode' => $production_editor_mode,
+            'fact_check_mode'     => $fact_check_mode,
+            'fact_check_title'    => isset( $request['fact_check_title'] ) ? sanitize_text_field( wp_unslash( $request['fact_check_title'] ) ) : '',
+            'fact_check_max_sources' => isset( $request['fact_check_max_sources'] ) ? sanitize_text_field( wp_unslash( $request['fact_check_max_sources'] ) ) : '',
             'tone'                => isset( $request['tone'] ) ? wp_kses_post( wp_unslash( $request['tone'] ) ) : $defaults['ai_config']['tone'],
             'story_strategy'      => $story_strategy,
             'research_depth'      => $research_depth,

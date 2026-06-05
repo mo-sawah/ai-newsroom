@@ -35,3 +35,6 @@ body[class*="_page_ain-"]{background:#f4f5f8;color:#0f172a}
 .ain-is-working{min-width:31px!important;min-height:31px!important;padding-left:0!important;padding-right:0!important}
 .ain-is-working .ain-spinner{margin-right:0!important}
 .ain-is-done .dashicons,.ain-is-error .dashicons{width:16px;height:16px;font-size:16px;line-height:16px}
+
+/* Fact Check settings additions */
+.ain-subcard{border:1px solid var(--ain-line);background:var(--ain-panel-soft);border-radius:12px;padding:14px;margin:12px 0 14px}.ain-subcard h3{margin:0 0 6px;font-size:14px}.ain-help-text{margin:0 0 12px;color:var(--ain-muted);font-size:12px;line-height:1.45}.ain-soft-sep{border:0;border-top:1px solid var(--ain-line);margin:18px 0}

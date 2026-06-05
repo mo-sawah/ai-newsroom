@@ -33,10 +33,16 @@ function ain_default_settings() {
         'enable_topic_hub_links'         => 1,
         'enable_production_editor'       => 1,
         'max_internal_links'             => 3,
+        'enable_fact_check_box'          => 1,
+        'fact_check_title'               => 'Fact Check & Sources',
+        'fact_check_default_open'        => 0,
+        'fact_check_max_sources'         => 6,
+        'fact_check_show_verified_facts' => 1,
+        'fact_check_show_uncertain_claims' => 1,
         'site_voice'                     => 'Professional wire-service news voice. Accurate, neutral, concise, and specific. Use inverted-pyramid structure: lede first, attribution high, context and background lower. Prefer short paragraphs and active voice. Avoid SEO filler, generic AI transitions, commentary tone, and templated section labels such as Why it matters, What happens next, What remains uncertain, Context, The bottom line, or Key takeaways. Do not place external source hyperlinks inside article bodies.',
         'editor_prompt'                  => 'You are the senior assignment editor for a professional digital newsroom. Your job is to review raw source material and turn it into clear reporting assignments. Treat sources as reporting material, not articles to rewrite. First, understand each source item separately: main entities, topic area, event type, core action, core claim, news peg, confirmed facts, facts that still need checking, source quality, and whether the item is original reporting, an official document, a press release, or republished coverage. Then group only sources that cover the same specific development. Do not group stories only because they share the same person, company, country, industry, or broad topic. A specific development may be an announcement, filing, arrest, lawsuit, attack, policy decision, earnings result, launch, partnership, investigation, court action, security incident, market-moving statement, or official confirmation. Keep separate developments separate, even if they involve the same person or company. For each approved story cluster, create a reporting brief with a working label, one-sentence summary of the actual news, why these sources belong together, why the story is worth covering, strongest reporting angle, likely lede, nut graph in one sentence, facts that need verification, sources that should be treated carefully, recommended research depth, suggested category and author. Reject thin, duplicate, outdated, promotional, weakly sourced, or low-value stories. Prefer fewer strong, well-supported stories over many thin articles.',
         'writer_prompt'                  => 'You are an expert wire-service journalist writing for a premier global news agency. Synthesize the provided research pack into an objective, authoritative, and fast-paced news article. Do NOT write a book report summarizing individual sources. The first paragraph MUST start with a standard journalistic dateline in bold HTML, followed by an em dash. Format: <p><strong>CITY, Month Date</strong> — The lede continues here...</p>. Infer the most relevant city based on where the story is taking place or where markets/politics are reacting, and use today\'s date. The lede must be 25-35 words and deliver the newest verified development: who, what, when, and where. Use inverted pyramid structure: lede first, then a nut graph explaining broader market, political, public-interest, or local significance, then supporting details and quotes. Keep paragraphs extremely tight: 1 to 2 sentences maximum. Output clean HTML using <p>, <strong>, and <blockquote> only. Do NOT use <h2> or <h3> headings for standard news reports. Never use formulaic headers such as Why it matters, Background, Takeaways, Context, The bottom line, or What happens next. Never use filler phrases such as underscores, highlights, delve into, landscape, in a significant development, rapidly evolving, or it remains to be seen. Report verified facts directly as newsroom reporting. Use attribution only when necessary for disputed claims, quotes, legal allegations, forward-looking statements, or facts that belong clearly to an official document or named source. Do NOT create any external hyperlinks, source links, references lists, Sources section, Reporting based on paragraph, or link-based attribution. Do not fabricate facts, quotes, numbers, dates, names, links, motives, or allegations.',
-        'production_prompt'              => 'You are the production editor for AI Newsroom. Your job is to protect the finished article and prepare it for WordPress and Rank Math. Do not rewrite the article body. Do not change paragraph order, voice, lede, nut graph, quotes, numbers, or claims. Return production metadata only: clean SEO title, 150-160 character meta description, one natural focus keyword, 2-5 WordPress tags, optional image metadata, and optional table/chart data. You may suggest internal links only when the exact anchor text already exists naturally in the article and the internal URL is supplied. Never add, suggest, request, or preserve external source links in the article body. Tables and charts are optional and should appear only when the story clearly contains structured facts or real comparable numbers. Never invent data. Do not generate social posts, push text, related boxes, references, source lists, or any SEO score.',
+        'production_prompt'              => 'You are the production editor for AI Newsroom. Your job is to protect the finished article and prepare it for WordPress and Rank Math. Do not rewrite the article body. Do not change paragraph order, voice, lede, nut graph, quotes, numbers, or claims. Return production metadata only: clean SEO title, 150-160 character meta description, one natural focus keyword, 2-5 WordPress tags, optional image metadata, optional table/chart data, and a concise fact_check object for the collapsible Fact Check & Sources box. You may suggest internal links only when the exact anchor text already exists naturally in the article and the internal URL is supplied. Never add, suggest, request, or preserve external source links in the article body. Source URLs may appear only inside the fact_check object. Tables and charts are optional and should appear only when the story clearly contains structured facts or real comparable numbers. Never invent data. Do not generate social posts, push text, related boxes, references, source lists, or any SEO score.',
     );
 }
 
@@ -79,6 +85,15 @@ function ain_clean_external_link_prompt( $prompt, $key ) {
 }
 
 function ain_upgrade_no_external_article_links_218() {
+    if ( get_option( 'ain_no_external_article_links_218_done' ) ) {
+        return;
+    }
+    $installed_version = get_option( 'ain_version', '' );
+    if ( $installed_version && version_compare( $installed_version, '2.0.18', '>=' ) ) {
+        update_option( 'ain_no_external_article_links_218_done', 1, false );
+        return;
+    }
+
     $settings = get_option( AIN_OPTION_KEY, array() );
     if ( ! is_array( $settings ) ) {
         $settings = array();
@@ -109,6 +124,55 @@ function ain_upgrade_no_external_article_links_218() {
             'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
             'updated_at' => current_time( 'mysql' ),
         ), array( 'id' => (int) $row->id ) );
+    }
+    update_option( 'ain_no_external_article_links_218_done', 1, false );
+}
+
+
+function ain_upgrade_fact_check_box_219() {
+    $settings = get_option( AIN_OPTION_KEY, array() );
+    if ( ! is_array( $settings ) ) {
+        $settings = array();
+    }
+    $defaults = ain_default_settings();
+    $changed = false;
+    foreach ( array( 'enable_fact_check_box', 'fact_check_title', 'fact_check_default_open', 'fact_check_max_sources', 'fact_check_show_verified_facts', 'fact_check_show_uncertain_claims' ) as $key ) {
+        if ( ! array_key_exists( $key, $settings ) ) {
+            $settings[ $key ] = $defaults[ $key ];
+            $changed = true;
+        }
+    }
+    if ( $changed ) {
+        update_option( AIN_OPTION_KEY, $settings, false );
+    }
+
+    global $wpdb;
+    $table = ain_table( 'campaigns' );
+    $rows = $wpdb->get_results( "SELECT id, ai_config FROM {$table}" );
+    foreach ( $rows as $row ) {
+        $ai = ain_decode_json_field( $row->ai_config );
+        if ( ! is_array( $ai ) ) {
+            $ai = array();
+        }
+        $row_changed = false;
+        if ( ! isset( $ai['fact_check_mode'] ) ) {
+            $ai['fact_check_mode'] = 'global';
+            $row_changed = true;
+        }
+        if ( ! isset( $ai['fact_check_title'] ) ) {
+            $ai['fact_check_title'] = '';
+            $row_changed = true;
+        }
+        if ( ! isset( $ai['fact_check_max_sources'] ) ) {
+            $ai['fact_check_max_sources'] = '';
+            $row_changed = true;
+        }
+        if ( $row_changed ) {
+            $wpdb->update( $table, array(
+                'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
+                'updated_at' => current_time( 'mysql' ),
+            ), array( 'id' => (int) $row->id ) );
+        }
     }
 }
 
@@ -342,7 +406,7 @@ function ain_update_settings( $incoming ) {
     $defaults = ain_default_settings();
     $current  = ain_get_settings();
     $clean    = $current;
-    $checkbox_keys = array( 'enable_openrouter_web_search', 'enable_internal_links', 'enable_topic_hub_links', 'enable_production_editor' );
+    $checkbox_keys = array( 'enable_openrouter_web_search', 'enable_internal_links', 'enable_topic_hub_links', 'enable_production_editor', 'enable_fact_check_box', 'fact_check_default_open', 'fact_check_show_verified_facts', 'fact_check_show_uncertain_claims' );
     foreach ( $defaults as $key => $default ) {
         if ( ! array_key_exists( $key, $incoming ) ) {
             if ( in_array( $key, $checkbox_keys, true ) ) {
@@ -598,6 +662,15 @@ function ain_allowed_post_html() {
     $allowed['tr'] = array();
     $allowed['th'] = array( 'scope' => true );
     $allowed['td'] = array();
+    $allowed['details'] = array( 'class' => true, 'open' => true );
+    $allowed['summary'] = array( 'class' => true, 'aria-label' => true );
+    $allowed['section'] = array( 'class' => true, 'aria-label' => true );
+    foreach ( array( 'div', 'span', 'small', 'p', 'strong', 'em', 'ul', 'ol', 'li', 'h4' ) as $tag ) {
+        if ( ! isset( $allowed[ $tag ] ) || ! is_array( $allowed[ $tag ] ) ) {
+            $allowed[ $tag ] = array();
+        }
+        $allowed[ $tag ]['class'] = true;
+    }
     return $allowed;
 }
 

@@ -104,6 +104,7 @@ class AIN_Writer {
         }
 
         $final = self::merge_article_and_production( $draft, $production );
+        $final['fact_check'] = self::build_fact_check_data( $final['fact_check'] ?? array(), $research_pack, $source_links, $raw, $item, $campaign, $settings );
         if ( empty( $final['content'] ) || empty( $final['final_title'] ) ) {
             AIN_DB::update_item( $item->id, array( 'status' => 'failed', 'error_message' => 'AI writer returned invalid article data.' ) );
             return new WP_Error( 'bad_writer_json', 'AI writer returned invalid article data.' );
@@ -281,7 +282,22 @@ class AIN_Writer {
                 'locations' => $research_pack['locations'] ?? array(),
                 'key_numbers' => $research_pack['key_numbers'] ?? array(),
             ),
+            'source_material_for_fact_check' => array(
+                'article_source_links' => $source_links,
+                'research_verified_sources' => $research_pack['verified_sources'] ?? array(),
+                'key_facts' => $research_pack['key_facts'] ?? array(),
+                'timeline' => $research_pack['timeline'] ?? array(),
+                'uncertain_or_conflicting_claims' => $research_pack['uncertain_or_conflicting_claims'] ?? array(),
+                'claims_not_to_make' => $research_pack['claims_not_to_make'] ?? array(),
+            ),
             'internal_link_map' => $internal_link_map,
+            'fact_check_settings' => array(
+                'enabled' => self::is_fact_check_enabled( $campaign, $settings ),
+                'title' => self::fact_check_title( $campaign, $settings ),
+                'max_sources' => self::fact_check_max_sources( $campaign, $settings ),
+                'show_verified_facts' => ! empty( $settings['fact_check_show_verified_facts'] ),
+                'show_uncertain_claims' => ! empty( $settings['fact_check_show_uncertain_claims'] ),
+            ),
             'production_limits' => array(
                 'max_internal_links' => $max_internal,
                 'max_tables' => ! empty( $campaign->media_config['insert_inline_media'] ) && ! empty( $campaign->media_config['enable_smart_tables'] ) ? 1 : 0,
@@ -306,6 +322,28 @@ class AIN_Writer {
                 'table' => array( 'title' => '', 'headers' => array(), 'rows' => array(), 'reason' => '' ),
                 'chart' => array( 'title' => '', 'rows' => array(), 'reason' => '' ),
                 'value_added' => array( 'original_angle' => '', 'context_added' => '', 'reader_question_answered' => '', 'why_this_matters' => '' ),
+                'fact_check' => array(
+                    'summary' => 'one concise sentence describing how the article was checked; do not overclaim independent verification',
+                    'verified_facts' => array(
+                        array(
+                            'claim' => 'specific factual claim checked against the supplied source material',
+                            'status' => 'Verified / Source checked / Needs caution',
+                            'evidence' => 'short note explaining what confirmed it',
+                            'source_title' => 'source used, preferably document/organization/title',
+                            'url' => 'optional source URL from supplied source material only',
+                        ),
+                    ),
+                    'sources' => array(
+                        array(
+                            'title' => 'source title',
+                            'publisher' => 'publisher or organization',
+                            'url' => 'source URL from supplied source material only',
+                            'why_used' => 'what this source was used to verify',
+                            'source_type' => 'Original source / Research source / Background source',
+                        ),
+                    ),
+                    'caution_notes' => array( 'short uncertainty, disputed claim, missing confirmation, or claim deliberately not used' ),
+                ),
             ),
         );
 
@@ -321,14 +359,15 @@ class AIN_Writer {
         $system = $production_prompt . "\n\n"
             . "Hard production/output contract:\n"
             . "1. DO NOT rewrite, replace, summarize, expand, shorten, reorder, or stylistically edit the article body. Do not return a rewritten content field.\n"
-            . "2. Your job is metadata plus instructions: SEO fields, tags, image metadata, optional table/chart data, and a small internal-only link_insertions array.\n"
+            . "2. Your job is metadata plus instructions: SEO fields, tags, image metadata, optional table/chart data, a small internal-only link_insertions array, and the fact_check object.\n"
             . "3. Link insertion is permission-based and INTERNAL ONLY. The URL must exactly match a supplied internal URL. The anchor_text must already appear in the article draft. If no natural internal anchor exists, return no link.\n"
             . "4. Use at most {$max_internal} internal links. Return zero links if the available internal links do not fit naturally.\n"
-            . "5. Never add, suggest, preserve, or request external source links. Do not write source paragraphs, source lists, reference sections, or link-based attribution.\n"
-            . "6. Create Rank Math fields: SEO title, meta description, focus keyword, and WordPress tags. Do not return any SEO score.\n"
-            . "7. Tables are optional and only for genuinely structured facts already present. Charts are optional and only for real comparable numbers already present. Never invent numbers or estimates.\n"
-            . "8. Do not generate social media captions, push text, X posts, Facebook posts, Telegram posts, LinkedIn posts, or related-story boxes.\n"
-            . "9. Return ONLY valid JSON, no markdown fences.";
+            . "5. Never add, suggest, preserve, or request external source links inside the article body. Do not write source paragraphs, source lists, reference sections, or link-based attribution in the article.\n"
+            . "6. Create a professional fact_check object for the collapsible Fact Check & Sources box using only supplied source URLs and research-pack sources. Source URLs are allowed only inside fact_check. Do not overclaim: describe it as source-checked, not independently audited.\n"
+            . "7. Create Rank Math fields: SEO title, meta description, focus keyword, and WordPress tags. Do not return any SEO score.\n"
+            . "8. Tables are optional and only for genuinely structured facts already present with at least 3 comparable rows. Charts are optional and only for real comparable numbers with at least 3 rows. Never invent numbers or estimates.\n"
+            . "9. Do not generate social media captions, push text, X posts, Facebook posts, Telegram posts, LinkedIn posts, or related-story boxes.\n"
+            . "10. Return ONLY valid JSON, no markdown fences.";
 
         $response = AIN_AI::openrouter_chat(
             array(
@@ -377,6 +416,7 @@ class AIN_Writer {
             'link_insertions' => array(),
             'table' => array( 'title' => '', 'headers' => array(), 'rows' => array() ),
             'chart' => array( 'title' => '', 'rows' => array() ),
+            'fact_check' => array(),
             'value_added' => $draft['value_added'] ?? ( $research_pack['value_added'] ?? array() ),
         );
     }
@@ -386,7 +426,7 @@ class AIN_Writer {
         $allowed_production_keys = array(
             'seo_title', 'meta_description', 'focus_keyword', 'tags',
             'source_attribution', 'inline_media_query', 'image_prompt',
-            'chart', 'table', 'link_insertions', 'value_added'
+            'chart', 'table', 'link_insertions', 'value_added', 'fact_check'
         );
         if ( is_array( $production ) ) {
             foreach ( $allowed_production_keys as $key ) {
@@ -405,6 +445,7 @@ class AIN_Writer {
         if ( empty( $final['link_insertions'] ) || ! is_array( $final['link_insertions'] ) ) $final['link_insertions'] = array();
         if ( empty( $final['table'] ) || ! is_array( $final['table'] ) ) $final['table'] = array( 'title' => '', 'headers' => array(), 'rows' => array() );
         if ( empty( $final['chart'] ) || ! is_array( $final['chart'] ) ) $final['chart'] = array( 'title' => '', 'rows' => array() );
+        if ( empty( $final['fact_check'] ) || ! is_array( $final['fact_check'] ) ) $final['fact_check'] = array();
         return $final;
     }
 
@@ -628,6 +669,243 @@ class AIN_Writer {
         return array_slice( $links, 0, $limit );
     }
 
+
+    private static function is_fact_check_enabled( $campaign, $settings ) {
+        $mode = isset( $campaign->ai_config['fact_check_mode'] ) ? sanitize_key( $campaign->ai_config['fact_check_mode'] ) : 'global';
+        if ( 'enabled' === $mode ) return true;
+        if ( 'disabled' === $mode ) return false;
+        return ! empty( $settings['enable_fact_check_box'] );
+    }
+
+    private static function fact_check_title( $campaign, $settings ) {
+        $campaign_title = isset( $campaign->ai_config['fact_check_title'] ) ? trim( (string) $campaign->ai_config['fact_check_title'] ) : '';
+        $title = $campaign_title !== '' ? $campaign_title : ( $settings['fact_check_title'] ?? 'Fact Check & Sources' );
+        $title = sanitize_text_field( $title );
+        return $title ? $title : 'Fact Check & Sources';
+    }
+
+    private static function fact_check_max_sources( $campaign, $settings ) {
+        $campaign_max = isset( $campaign->ai_config['fact_check_max_sources'] ) ? (int) $campaign->ai_config['fact_check_max_sources'] : 0;
+        if ( $campaign_max > 0 ) return max( 1, min( 12, $campaign_max ) );
+        return max( 1, min( 12, (int) ( $settings['fact_check_max_sources'] ?? 6 ) ) );
+    }
+
+    private static function build_fact_check_data( $ai_fact_check, $research_pack, $source_links, $raw, $item, $campaign, $settings ) {
+        if ( ! self::is_fact_check_enabled( $campaign, $settings ) ) {
+            return array( 'enabled' => false );
+        }
+
+        $ai_fact_check = is_array( $ai_fact_check ) ? $ai_fact_check : array();
+        $research_pack = is_array( $research_pack ) ? $research_pack : array();
+        $source_links = is_array( $source_links ) ? $source_links : array();
+        $raw = is_array( $raw ) ? $raw : array();
+        $max_sources = self::fact_check_max_sources( $campaign, $settings );
+
+        $facts = array();
+        foreach ( (array) ( $ai_fact_check['verified_facts'] ?? array() ) as $fact ) {
+            $normalized = self::normalize_fact_check_fact( $fact );
+            if ( $normalized ) $facts[] = $normalized;
+            if ( count( $facts ) >= 5 ) break;
+        }
+        if ( count( $facts ) < 5 && ! empty( $research_pack['key_facts'] ) && is_array( $research_pack['key_facts'] ) ) {
+            foreach ( $research_pack['key_facts'] as $fact ) {
+                $normalized = self::normalize_fact_check_fact( $fact );
+                if ( $normalized ) $facts[] = $normalized;
+                if ( count( $facts ) >= 5 ) break;
+            }
+        }
+
+        $sources = array();
+        $add_source = function( $src, $fallback_type = 'Source material' ) use ( &$sources ) {
+            $normalized = AIN_Writer::normalize_fact_check_source( $src, $fallback_type );
+            if ( ! $normalized ) return;
+            $key = ! empty( $normalized['url'] ) ? strtolower( $normalized['url'] ) : strtolower( $normalized['title'] . '|' . $normalized['publisher'] );
+            if ( isset( $sources[ $key ] ) ) {
+                if ( empty( $sources[ $key ]['why_used'] ) && ! empty( $normalized['why_used'] ) ) {
+                    $sources[ $key ]['why_used'] = $normalized['why_used'];
+                }
+                return;
+            }
+            $sources[ $key ] = $normalized;
+        };
+
+        foreach ( (array) ( $ai_fact_check['sources'] ?? array() ) as $src ) $add_source( $src, 'Source used' );
+        foreach ( (array) ( $research_pack['verified_sources'] ?? array() ) as $src ) $add_source( $src, 'Research source' );
+        foreach ( $source_links as $src ) $add_source( $src, 'Source material' );
+        foreach ( (array) ( $raw['sources'] ?? array() ) as $src ) $add_source( $src, 'Original source' );
+        if ( empty( $sources ) && ! empty( $item->source_url ) ) {
+            $add_source( array( 'title' => $item->source_title, 'publisher' => $item->source_name, 'url' => $item->source_url, 'why_used' => 'Primary source material for this story.' ), 'Original source' );
+        }
+        $sources = array_slice( array_values( $sources ), 0, $max_sources );
+
+        $cautions = array();
+        foreach ( array( 'caution_notes', 'uncertain_claims', 'uncertain_or_conflicting_claims', 'claims_not_to_make' ) as $key ) {
+            if ( ! empty( $ai_fact_check[ $key ] ) ) {
+                foreach ( (array) $ai_fact_check[ $key ] as $note ) {
+                    $text = self::fact_check_text_from_mixed( $note );
+                    if ( $text ) $cautions[] = $text;
+                }
+            }
+        }
+        foreach ( array( 'uncertain_or_conflicting_claims', 'claims_not_to_make' ) as $key ) {
+            if ( ! empty( $research_pack[ $key ] ) ) {
+                foreach ( (array) $research_pack[ $key ] as $note ) {
+                    $text = self::fact_check_text_from_mixed( $note );
+                    if ( $text ) $cautions[] = $text;
+                }
+            }
+        }
+        $cautions = array_slice( array_values( array_unique( array_filter( $cautions ) ) ), 0, 5 );
+
+        $summary = sanitize_textarea_field( $ai_fact_check['summary'] ?? '' );
+        if ( ! $summary ) {
+            $summary = 'This story was checked against the source material and research references used during AI Newsroom production.';
+        }
+
+        if ( empty( $facts ) && empty( $sources ) && empty( $cautions ) ) {
+            return array( 'enabled' => false );
+        }
+
+        return array(
+            'enabled' => true,
+            'title' => self::fact_check_title( $campaign, $settings ),
+            'summary' => $summary,
+            'method' => count( $sources ) > 1 ? 'Source-checked' : 'Single-source check',
+            'verified_facts' => $facts,
+            'sources' => $sources,
+            'caution_notes' => $cautions,
+            'generated_at' => current_time( 'mysql' ),
+        );
+    }
+
+    private static function normalize_fact_check_fact( $fact ) {
+        if ( is_string( $fact ) ) {
+            $claim = sanitize_text_field( $fact );
+            return $claim ? array( 'claim' => $claim, 'status' => 'Source checked', 'evidence' => '', 'source_title' => '', 'url' => '' ) : array();
+        }
+        if ( ! is_array( $fact ) ) return array();
+        $claim = self::fact_check_text_from_mixed( $fact['claim'] ?? ( $fact['fact'] ?? ( $fact['text'] ?? ( $fact['summary'] ?? '' ) ) ) );
+        if ( ! $claim ) return array();
+        return array(
+            'claim' => $claim,
+            'status' => sanitize_text_field( $fact['status'] ?? 'Source checked' ),
+            'evidence' => self::fact_check_text_from_mixed( $fact['evidence'] ?? ( $fact['why'] ?? '' ) ),
+            'source_title' => sanitize_text_field( $fact['source_title'] ?? ( $fact['source'] ?? '' ) ),
+            'url' => esc_url_raw( $fact['url'] ?? '' ),
+        );
+    }
+
+    public static function normalize_fact_check_source( $src, $fallback_type = 'Source material' ) {
+        if ( is_string( $src ) ) {
+            $url = esc_url_raw( $src );
+            if ( ! $url ) return array();
+            $host = ain_safe_url_host( $url );
+            return array( 'title' => $host ?: $url, 'publisher' => $host, 'url' => $url, 'why_used' => '', 'source_type' => $fallback_type );
+        }
+        if ( ! is_array( $src ) ) return array();
+        $url = esc_url_raw( $src['url'] ?? ( $src['source_url'] ?? '' ) );
+        $publisher = sanitize_text_field( $src['publisher'] ?? ( $src['source_name'] ?? ( $url ? ain_safe_url_host( $url ) : '' ) ) );
+        $title = sanitize_text_field( $src['title'] ?? ( $src['source_title'] ?? ( $src['name'] ?? '' ) ) );
+        if ( ! $title ) $title = $publisher ?: ( $url ? ain_safe_url_host( $url ) : '' );
+        if ( ! $title && ! $url ) return array();
+        return array(
+            'title' => $title ?: $url,
+            'publisher' => $publisher,
+            'url' => $url,
+            'why_used' => self::fact_check_text_from_mixed( $src['why_used'] ?? ( $src['description'] ?? ( $src['reason'] ?? '' ) ) ),
+            'source_type' => sanitize_text_field( $src['source_type'] ?? $fallback_type ),
+        );
+    }
+
+    private static function fact_check_text_from_mixed( $value ) {
+        if ( is_scalar( $value ) ) {
+            return trim( sanitize_text_field( (string) $value ) );
+        }
+        if ( is_array( $value ) ) {
+            $parts = array();
+            foreach ( $value as $v ) {
+                if ( is_scalar( $v ) ) $parts[] = trim( (string) $v );
+            }
+            return trim( sanitize_text_field( implode( ' ', array_filter( $parts ) ) ) );
+        }
+        return '';
+    }
+
+    private static function render_fact_check_box( $data, $campaign, $settings ) {
+        if ( empty( $data['enabled'] ) || ! is_array( $data ) ) return '';
+        $title = sanitize_text_field( $data['title'] ?? self::fact_check_title( $campaign, $settings ) );
+        $summary = sanitize_textarea_field( $data['summary'] ?? '' );
+        $facts = ! empty( $data['verified_facts'] ) && is_array( $data['verified_facts'] ) ? $data['verified_facts'] : array();
+        $sources = ! empty( $data['sources'] ) && is_array( $data['sources'] ) ? $data['sources'] : array();
+        $cautions = ! empty( $data['caution_notes'] ) && is_array( $data['caution_notes'] ) ? $data['caution_notes'] : array();
+        $method = sanitize_text_field( $data['method'] ?? 'Source-checked' );
+        $open = ! empty( $settings['fact_check_default_open'] ) ? ' open' : '';
+
+        ob_start();
+        ?>
+        <details class="ain-fact-check-box"<?php echo $open; ?>>
+            <summary class="ain-fact-check-summary" aria-label="Open fact check and sources">
+                <span class="ain-fact-check-icon">✓</span>
+                <span class="ain-fact-check-title-wrap">
+                    <span class="ain-fact-check-kicker">Source transparency</span>
+                    <span class="ain-fact-check-title"><?php echo esc_html( $title ); ?></span>
+                </span>
+                <span class="ain-fact-check-meta"><?php echo esc_html( $method ); ?> · <?php echo esc_html( count( $sources ) ); ?> source<?php echo 1 === count( $sources ) ? '' : 's'; ?></span>
+            </summary>
+            <section class="ain-fact-check-body" aria-label="Fact check notes and sources">
+                <?php if ( $summary ) : ?><p class="ain-fact-check-lede"><?php echo esc_html( $summary ); ?></p><?php endif; ?>
+                <div class="ain-fact-check-stats">
+                    <span><strong><?php echo esc_html( count( $facts ) ); ?></strong><small>facts checked</small></span>
+                    <span><strong><?php echo esc_html( count( $sources ) ); ?></strong><small>sources reviewed</small></span>
+                    <span><strong><?php echo esc_html( count( $cautions ) ); ?></strong><small>caution notes</small></span>
+                </div>
+                <?php if ( ! empty( $settings['fact_check_show_verified_facts'] ) && $facts ) : ?>
+                    <h4>What was checked</h4>
+                    <ul class="ain-fact-check-facts">
+                        <?php foreach ( array_slice( $facts, 0, 5 ) as $fact ) : ?>
+                            <?php $fact = self::normalize_fact_check_fact( $fact ); if ( ! $fact ) continue; ?>
+                            <li>
+                                <span class="ain-fact-status"><?php echo esc_html( $fact['status'] ?: 'Source checked' ); ?></span>
+                                <span><?php echo esc_html( $fact['claim'] ); ?></span>
+                                <?php if ( ! empty( $fact['evidence'] ) ) : ?><small><?php echo esc_html( $fact['evidence'] ); ?></small><?php endif; ?>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+                <?php if ( $sources ) : ?>
+                    <h4>Sources reviewed</h4>
+                    <ul class="ain-fact-check-sources">
+                        <?php foreach ( $sources as $src ) : ?>
+                            <?php $src = self::normalize_fact_check_source( $src ); if ( ! $src ) continue; ?>
+                            <li>
+                                <span class="ain-source-type"><?php echo esc_html( $src['source_type'] ?: 'Source' ); ?></span>
+                                <?php if ( ! empty( $src['url'] ) ) : ?>
+                                    <a href="<?php echo esc_url( $src['url'] ); ?>" rel="nofollow noopener" target="_blank"><?php echo esc_html( $src['title'] ); ?></a>
+                                <?php else : ?>
+                                    <strong><?php echo esc_html( $src['title'] ); ?></strong>
+                                <?php endif; ?>
+                                <?php if ( ! empty( $src['publisher'] ) ) : ?><small><?php echo esc_html( $src['publisher'] ); ?></small><?php endif; ?>
+                                <?php if ( ! empty( $src['why_used'] ) ) : ?><em><?php echo esc_html( $src['why_used'] ); ?></em><?php endif; ?>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+                <?php if ( ! empty( $settings['fact_check_show_uncertain_claims'] ) && $cautions ) : ?>
+                    <h4>Notes and limits</h4>
+                    <ul class="ain-fact-check-cautions">
+                        <?php foreach ( array_slice( $cautions, 0, 5 ) as $note ) : ?>
+                            <?php $note = self::fact_check_text_from_mixed( $note ); if ( ! $note ) continue; ?>
+                            <li><?php echo esc_html( $note ); ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+                <p class="ain-fact-check-disclaimer">This panel is generated from the same source material and research pack used to produce the article. It is designed for transparency and does not replace independent editorial review.</p>
+            </section>
+        </details>
+        <?php
+        return trim( ob_get_clean() );
+    }
+
     private static function allowed_production_link_urls( $source_links, $internal_link_map ) {
         // External source URLs are intentionally not allowed in article bodies.
         // This map is internal-only so production can improve SEO without turning
@@ -784,6 +1062,9 @@ class AIN_Writer {
         update_post_meta( $post_id, '_ain_quality_score', (int) ( $draft['quality_score'] ?? 0 ) );
         update_post_meta( $post_id, '_ain_quality_notes', sanitize_textarea_field( $draft['quality_notes'] ?? '' ) );
         update_post_meta( $post_id, '_ain_research_pack', wp_json_encode( $research_pack, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+        if ( ! empty( $draft['fact_check'] ) ) {
+            update_post_meta( $post_id, '_ain_fact_check', wp_json_encode( $draft['fact_check'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
+        }
         update_post_meta( $post_id, '_ain_value_added', wp_json_encode( $draft['value_added'] ?? ( $research_pack['value_added'] ?? array() ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
         if ( ! empty( $raw['story_fingerprint'] ) ) update_post_meta( $post_id, '_ain_story_fingerprint', sanitize_text_field( $raw['story_fingerprint'] ) );
         if ( ! empty( $raw['sources'] ) ) update_post_meta( $post_id, '_ain_source_urls', wp_json_encode( wp_list_pluck( $raw['sources'], 'url' ), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) );
