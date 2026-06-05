@@ -273,3 +273,114 @@ body.single .ain-fact-check-box > summary.ain-fact-check-summary{
     width:100%;
   }
 }
+
+/* v2.0.22 — compact, theme-resistant Fact Check layout */
+body .ain-fact-check-box{
+  margin:24px 0!important;
+  border-radius:16px!important;
+  overflow:hidden!important;
+}
+body .ain-fact-check-box > summary.ain-fact-check-summary,
+body .entry-content .ain-fact-check-box > summary.ain-fact-check-summary,
+body.single .ain-fact-check-box > summary.ain-fact-check-summary{
+  display:grid!important;
+  grid-template-columns:42px minmax(0,1fr) auto!important;
+  grid-template-rows:auto!important;
+  align-items:center!important;
+  column-gap:14px!important;
+  row-gap:0!important;
+  min-height:0!important;
+  height:auto!important;
+  padding:18px 20px!important;
+  margin:0!important;
+  line-height:1.2!important;
+  white-space:normal!important;
+}
+body .ain-fact-check-icon{
+  grid-column:1!important;
+  grid-row:1!important;
+  width:42px!important;
+  height:42px!important;
+  min-width:42px!important;
+  min-height:42px!important;
+  margin:0!important;
+  align-self:center!important;
+}
+body .ain-fact-check-title-wrap{
+  grid-column:2!important;
+  grid-row:1!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:0!important;
+  align-self:center!important;
+}
+body .ain-fact-check-meta{
+  grid-column:3!important;
+  grid-row:1!important;
+  justify-self:end!important;
+  align-self:center!important;
+  width:auto!important;
+  min-width:0!important;
+  max-width:260px!important;
+  margin:0!important;
+  padding:7px 12px!important;
+  white-space:nowrap!important;
+}
+body .ain-fact-check-body{
+  padding:18px 20px 20px!important;
+}
+body .ain-fact-check-lede{
+  margin:0 0 14px!important;
+}
+body .ain-fact-check-stats,
+body .entry-content .ain-fact-check-stats,
+body.single .ain-fact-check-stats{
+  display:flex!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
+  align-items:stretch!important;
+  justify-content:space-between!important;
+  gap:12px!important;
+  width:100%!important;
+  margin:0 0 20px!important;
+  padding:0!important;
+}
+body .ain-fact-check-stats > span,
+body .entry-content .ain-fact-check-stats > span,
+body.single .ain-fact-check-stats > span{
+  display:block!important;
+  flex:1 1 0!important;
+  width:auto!important;
+  min-width:0!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:12px 14px!important;
+  float:none!important;
+  clear:none!important;
+}
+@media (max-width:700px){
+  body .ain-fact-check-box > summary.ain-fact-check-summary,
+  body .entry-content .ain-fact-check-box > summary.ain-fact-check-summary,
+  body.single .ain-fact-check-box > summary.ain-fact-check-summary{
+    grid-template-columns:40px minmax(0,1fr)!important;
+    row-gap:10px!important;
+    padding:16px!important;
+  }
+  body .ain-fact-check-meta{
+    grid-column:1 / -1!important;
+    grid-row:2!important;
+    justify-self:start!important;
+    max-width:100%!important;
+    white-space:normal!important;
+  }
+  body .ain-fact-check-stats,
+  body .entry-content .ain-fact-check-stats,
+  body.single .ain-fact-check-stats{
+    flex-wrap:wrap!important;
+  }
+  body .ain-fact-check-stats > span,
+  body .entry-content .ain-fact-check-stats > span,
+  body.single .ain-fact-check-stats > span{
+    flex:1 1 140px!important;
+  }
+}

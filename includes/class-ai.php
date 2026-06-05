@@ -645,9 +645,31 @@ class AIN_AI {
         if ( ! is_array( $decoded ) ) {
             return new WP_Error( 'bad_research_json', 'Research pack builder returned invalid JSON.' );
         }
+        $web_sources = self::extract_openrouter_web_sources( $response );
+        if ( ! empty( $web_sources ) ) {
+            $decoded['openrouter_web_sources'] = $web_sources;
+            $existing_sources = ! empty( $decoded['verified_sources'] ) && is_array( $decoded['verified_sources'] ) ? $decoded['verified_sources'] : array();
+            $seen_source_urls = array();
+            foreach ( $existing_sources as $existing_source ) {
+                if ( is_array( $existing_source ) && ! empty( $existing_source['url'] ) ) {
+                    $seen_source_urls[ strtolower( esc_url_raw( $existing_source['url'] ) ) ] = true;
+                }
+            }
+            foreach ( $web_sources as $web_source ) {
+                $web_url = strtolower( esc_url_raw( $web_source['url'] ?? '' ) );
+                if ( $web_url && empty( $seen_source_urls[ $web_url ] ) ) {
+                    $existing_sources[] = $web_source;
+                    $seen_source_urls[ $web_url ] = true;
+                }
+            }
+            $decoded['verified_sources'] = array_slice( $existing_sources, 0, 12 );
+        }
+
         $decoded['finalized'] = true;
         $decoded['built_at'] = current_time( 'mysql' );
         $decoded['source_context_count'] = is_array( $source_contexts ) ? count( $source_contexts ) : 0;
+        $decoded['web_search_enabled'] = $search_enabled ? 1 : 0;
+        $decoded['web_search_source_count'] = ! empty( $web_sources ) ? count( $web_sources ) : 0;
         $decoded['working_label'] = $working_label;
         $decoded['story_desk_assignment'] = $payload['story_desk_assignment'];
         if ( empty( $decoded['headline_options'] ) ) {
@@ -657,6 +679,62 @@ class AIN_AI {
             $decoded['recommended_headline'] = $decoded['headline_options'][0];
         }
         return $decoded;
+    }
+
+
+    private static function extract_openrouter_web_sources( $response ) {
+        $sources = array();
+        $add = function( $url, $title = '', $publisher = '', $why_used = '' ) use ( &$sources ) {
+            $url = esc_url_raw( $url );
+            if ( ! $url || ! preg_match( '#^https?://#i', $url ) ) return;
+            $key = strtolower( preg_replace( '#[?#].*$#', '', $url ) );
+            if ( isset( $sources[ $key ] ) ) return;
+            $host = ain_safe_url_host( $url );
+            $title = sanitize_text_field( $title );
+            $publisher = sanitize_text_field( $publisher );
+            $why_used = sanitize_text_field( $why_used );
+            $sources[ $key ] = array(
+                'title'       => $title ?: ( $publisher ?: ( $host ?: $url ) ),
+                'publisher'   => $publisher ?: $host,
+                'url'         => $url,
+                'why_used'    => $why_used ?: 'Found through OpenRouter web search during the research-pack step.',
+                'source_type' => 'OpenRouter web search',
+            );
+        };
+
+        $scan = function( $value ) use ( &$scan, $add ) {
+            if ( ! is_array( $value ) ) return;
+
+            if ( ! empty( $value['url_citation'] ) && is_array( $value['url_citation'] ) ) {
+                $citation = $value['url_citation'];
+                $add(
+                    $citation['url'] ?? '',
+                    $citation['title'] ?? '',
+                    $citation['publisher'] ?? '',
+                    $citation['content'] ?? ( $citation['snippet'] ?? '' )
+                );
+            }
+
+            $url = $value['url'] ?? ( $value['href'] ?? ( $value['link'] ?? ( $value['source_url'] ?? '' ) ) );
+            if ( is_string( $url ) && preg_match( '#^https?://#i', $url ) ) {
+                $add(
+                    $url,
+                    $value['title'] ?? ( $value['name'] ?? ( $value['source_title'] ?? '' ) ),
+                    $value['publisher'] ?? ( $value['source_name'] ?? ( $value['site_name'] ?? '' ) ),
+                    $value['why_used'] ?? ( $value['snippet'] ?? ( $value['content'] ?? ( $value['description'] ?? '' ) ) )
+                );
+            }
+
+            foreach ( $value as $child ) {
+                if ( is_array( $child ) ) $scan( $child );
+            }
+        };
+
+        if ( ! empty( $response['message'] ) && is_array( $response['message'] ) ) $scan( $response['message'] );
+        if ( ! empty( $response['raw'] ) && is_array( $response['raw'] ) ) $scan( $response['raw'] );
+        if ( ! empty( $response['citations'] ) && is_array( $response['citations'] ) ) $scan( $response['citations'] );
+
+        return array_slice( array_values( $sources ), 0, 12 );
     }
 
     public static function mode_instructions( $type ) {

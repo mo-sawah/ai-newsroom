@@ -290,6 +290,9 @@ class AIN_Writer {
             'source_material_for_fact_check' => array(
                 'article_source_links' => $source_links,
                 'research_verified_sources' => $research_pack['verified_sources'] ?? array(),
+                'openrouter_web_sources' => $research_pack['openrouter_web_sources'] ?? array(),
+                'web_search_enabled' => $research_pack['web_search_enabled'] ?? 0,
+                'web_search_source_count' => $research_pack['web_search_source_count'] ?? 0,
                 'key_facts' => $research_pack['key_facts'] ?? array(),
                 'timeline' => $research_pack['timeline'] ?? array(),
                 'uncertain_or_conflicting_claims' => $research_pack['uncertain_or_conflicting_claims'] ?? array(),
@@ -368,7 +371,7 @@ class AIN_Writer {
             . "3. Link insertion is permission-based and INTERNAL ONLY. The URL must exactly match a supplied internal URL. The anchor_text must already appear in the article draft. If no natural internal anchor exists, return no link.\n"
             . "4. Use at most {$max_internal} internal links. Return zero links if the available internal links do not fit naturally.\n"
             . "5. Never add, suggest, preserve, or request external source links inside the article body. Do not write source paragraphs, source lists, reference sections, or link-based attribution in the article.\n"
-            . "6. Create a professional fact_check object for the collapsible Fact Check & Sources box using only supplied source URLs and research-pack sources. Source URLs are allowed only inside fact_check. Do not overclaim: describe it as source-checked, not independently audited.\n"
+            . "6. Create a professional fact_check object for the collapsible Fact Check & Sources box using supplied source URLs, research-pack sources, and OpenRouter web-search sources when available. Source URLs are allowed only inside fact_check. Do not overclaim: describe it as source-checked, not independently audited.\n"
             . "7. Create Rank Math fields: SEO title, meta description, focus keyword, and WordPress tags. Do not return any SEO score.\n"
             . "8. Tables are optional and only for genuinely structured facts already present with at least 3 comparable rows. Charts are optional and only for real comparable numbers with at least 3 rows. Never invent numbers or estimates.\n"
             . "9. Do not generate social media captions, push text, X posts, Facebook posts, Telegram posts, LinkedIn posts, or related-story boxes.\n"
@@ -735,6 +738,10 @@ class AIN_Writer {
         };
 
         foreach ( (array) ( $ai_fact_check['sources'] ?? array() ) as $src ) $add_source( $src, 'Source used' );
+        foreach ( (array) ( $research_pack['openrouter_web_sources'] ?? array() ) as $src ) $add_source( $src, 'OpenRouter web search' );
+        foreach ( (array) ( $research_pack['web_search_sources'] ?? array() ) as $src ) $add_source( $src, 'OpenRouter web search' );
+        foreach ( (array) ( $research_pack['citation_sources'] ?? array() ) as $src ) $add_source( $src, 'Research citation' );
+        foreach ( (array) ( $research_pack['citations'] ?? array() ) as $src ) $add_source( $src, 'Research citation' );
         foreach ( (array) ( $research_pack['verified_sources'] ?? array() ) as $src ) $add_source( $src, 'Research source' );
         foreach ( $source_links as $src ) $add_source( $src, 'Source material' );
         foreach ( (array) ( $raw['sources'] ?? array() ) as $src ) $add_source( $src, 'Original source' );

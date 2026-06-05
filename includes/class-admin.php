@@ -338,10 +338,14 @@ class AIN_Admin {
                             <?php self::input( 'fact_check_max_sources', 'Custom Max Sources', $campaign->ai_config['fact_check_max_sources'] ?? '', 'number', 'Use global setting' ); ?>
                         </div>
                         <?php self::select_raw( 'story_strategy', 'Story Strategy', array( 'source_first' => 'Source-first: 1 source = 1 article', 'smart' => 'Smart Story Grouping', 'aggressive' => 'Aggressive Newsroom Mode' ), $campaign->ai_config['story_strategy'] ); ?>
-                        <?php self::select_raw( 'research_depth', 'Research Depth', array( 'fast' => 'Fast', 'balanced' => 'Balanced', 'deep' => 'Deep' ), $campaign->ai_config['research_depth'] ); ?>
-                        <?php self::checkbox( 'enable_research_pack', 'Build Research Pack Before Writing', $campaign->ai_config['enable_research_pack'] ); ?>
-                        <?php self::checkbox( 'enable_web_search', 'Use OpenRouter Web Search In Research Pack', $campaign->ai_config['enable_web_search'] ); ?>
-                        <?php self::input( 'search_result_count', 'Max Outside Sources For Research', $campaign->ai_config['search_result_count'], 'number' ); ?>
+                        <div class="ain-subcard ain-research-subcard">
+                            <h3>Research & Web Verification</h3>
+                            <p class="ain-help-text">Controls the research pack used before writing. When OpenRouter web search is enabled, discovered web citations are saved into the Fact Check & Sources box, not inserted into the article body.</p>
+                            <?php self::select_raw( 'research_depth', 'Research Depth', array( 'fast' => 'Fast', 'balanced' => 'Balanced', 'deep' => 'Deep' ), $campaign->ai_config['research_depth'] ); ?>
+                            <?php self::checkbox( 'enable_research_pack', 'Build Research Pack Before Writing', $campaign->ai_config['enable_research_pack'] ); ?>
+                            <?php self::checkbox( 'enable_web_search', 'Use OpenRouter Web Search For Extra Fact-Check Sources', $campaign->ai_config['enable_web_search'] ); ?>
+                            <?php self::input( 'search_result_count', 'Max OpenRouter Web Sources', $campaign->ai_config['search_result_count'], 'number' ); ?>
+                        </div>
                         <?php self::input( 'temperature', 'Creativity / Temperature', $campaign->ai_config['temperature'] ); ?>
                     </div>
                 </div>
