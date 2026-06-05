@@ -128,6 +128,9 @@ class AIN_DB {
         if ( function_exists( 'ain_upgrade_production_editor_toggle_215' ) ) {
             ain_upgrade_production_editor_toggle_215();
         }
+        if ( function_exists( 'ain_upgrade_no_external_article_links_218' ) ) {
+            ain_upgrade_no_external_article_links_218();
+        }
 
         self::maybe_create_sample_campaign();
         update_option( 'ain_version', AIN_VERSION, false );

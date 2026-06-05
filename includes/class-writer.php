@@ -117,7 +117,7 @@ class AIN_Writer {
         if ( $youtube_embed && false === strpos( $content, 'youtube.com/embed' ) ) {
             $content = $youtube_embed . "\n" . $content;
         }
-        $content = self::ensure_external_source_link_rels( $content );
+        $content = self::strip_external_links_from_content( $content );
         if ( ! empty( $campaign->media_config['insert_inline_media'] ) ) {
             if ( ! empty( $campaign->media_config['enable_smart_tables'] ) && ! empty( $final['table']['rows'] ) && is_array( $final['table']['rows'] ) ) {
                 $table_html = AIN_Media::generate_table_html( $final['table'] );
@@ -175,7 +175,6 @@ class AIN_Writer {
             'story' => array(
                 'working_label' => $item->suggested_title,
                 'source_title' => $item->source_title,
-                'source_url' => $item->source_url,
                 'excerpt' => $item->source_excerpt,
                 'raw_payload' => $raw,
             ),
@@ -188,7 +187,6 @@ class AIN_Writer {
                 'title_direction' => $research_pack['story_desk_assignment']['title_direction'] ?? '',
             ),
             'source_contexts' => $source_contexts,
-            'verified_source_links_for_attribution_guidance' => $source_links,
             'research_pack' => $research_pack,
             'editorial_assignment' => $item->ai_summary,
             'target_word_count' => (int) ( $campaign->publishing_config['words_target'] ?? 700 ),
@@ -241,7 +239,7 @@ class AIN_Writer {
             . "3. The lede should usually be 35 words or fewer and answer who/what/when/where. Put the nut graph in paragraph 2 or 3.\n"
             . "4. Use short paragraphs, active voice, concrete nouns, neutral language, and natural human transitions.\n"
             . "5. Do not add a final source list, references block, or generic headings such as 'Why it matters', 'Background', 'Context', 'Key takeaways', or 'The bottom line'.\n"
-            . "6. Links are optional in this draft. If you include any link, it must use a supplied verified URL and a natural attribution anchor. Never invent URLs.\n"
+            . "6. Do not create any hyperlinks or <a> tags in the article draft. Use plain-text attribution only when journalism requires it. Internal links are handled later by production.\n"
             . "7. Do not fabricate quotes, data, names, dates, motives, or allegations.\n"
             . "8. Return ONLY valid JSON, no markdown fences.";
 
@@ -267,7 +265,6 @@ class AIN_Writer {
 
     private static function generate_production_pack( $draft, $item, $campaign, $research_pack, $source_links, $internal_link_map, $category, $settings ) {
         $max_internal = max( 0, (int) ( $settings['max_internal_links'] ?? 3 ) );
-        $max_external = 2;
         $payload = array(
             'article_draft' => array(
                 'final_title' => $draft['final_title'] ?? '',
@@ -277,7 +274,6 @@ class AIN_Writer {
             ),
             'story_context' => array(
                 'source_title' => $item->source_title,
-                'source_url' => $item->source_url,
                 'editorial_assignment' => $item->ai_summary,
                 'category' => $category && ! is_wp_error( $category ) ? $category->name : '',
                 'suggested_internal_link_terms' => $research_pack['suggested_internal_link_terms'] ?? array(),
@@ -285,10 +281,8 @@ class AIN_Writer {
                 'locations' => $research_pack['locations'] ?? array(),
                 'key_numbers' => $research_pack['key_numbers'] ?? array(),
             ),
-            'verified_external_source_links' => array_slice( $source_links, 0, 6 ),
             'internal_link_map' => $internal_link_map,
             'production_limits' => array(
-                'max_external_source_links' => $max_external,
                 'max_internal_links' => $max_internal,
                 'max_tables' => ! empty( $campaign->media_config['insert_inline_media'] ) && ! empty( $campaign->media_config['enable_smart_tables'] ) ? 1 : 0,
                 'max_charts' => ! empty( $campaign->media_config['insert_inline_media'] ) && ! empty( $campaign->media_config['enable_smart_charts'] ) ? 1 : 0,
@@ -300,13 +294,13 @@ class AIN_Writer {
                 'tags' => array( '2-5 clean WordPress tags: people, companies, places, or concrete topics' ),
                 'link_insertions' => array(
                     array(
-                        'type' => 'external|internal',
-                        'url' => 'must exactly match one supplied URL',
+                        'type' => 'internal',
+                        'url' => 'must exactly match one supplied internal URL',
                         'anchor_text' => 'exact visible words already present in the article draft',
-                        'reason' => 'why this link helps readers',
+                        'reason' => 'why this internal link helps readers',
                     ),
                 ),
-                'source_attribution' => 'short attribution note or empty string',
+                'source_attribution' => '',
                 'inline_media_query' => 'short free image search query if useful',
                 'image_prompt' => 'featured image prompt if AI image is needed',
                 'table' => array( 'title' => '', 'headers' => array(), 'rows' => array(), 'reason' => '' ),
@@ -327,10 +321,10 @@ class AIN_Writer {
         $system = $production_prompt . "\n\n"
             . "Hard production/output contract:\n"
             . "1. DO NOT rewrite, replace, summarize, expand, shorten, reorder, or stylistically edit the article body. Do not return a rewritten content field.\n"
-            . "2. Your job is metadata plus instructions: SEO fields, tags, image metadata, optional table/chart data, and a small link_insertions array.\n"
-            . "3. Link insertion is permission-based. The URL must exactly match a supplied URL. The anchor_text must already appear in the article draft. If no natural anchor exists, return no link.\n"
-            . "4. Use at most {$max_external} external source links and at most {$max_internal} internal links. Prefer zero links over awkward links.\n"
-            . "5. Do not write awkward attribution such as 'Reuters reports', 'CNN coverage', or 'according to coverage'. Do not invent source names, source paragraphs, or source lists.\n"
+            . "2. Your job is metadata plus instructions: SEO fields, tags, image metadata, optional table/chart data, and a small internal-only link_insertions array.\n"
+            . "3. Link insertion is permission-based and INTERNAL ONLY. The URL must exactly match a supplied internal URL. The anchor_text must already appear in the article draft. If no natural internal anchor exists, return no link.\n"
+            . "4. Use at most {$max_internal} internal links. Return zero links if the available internal links do not fit naturally.\n"
+            . "5. Never add, suggest, preserve, or request external source links. Do not write source paragraphs, source lists, reference sections, or link-based attribution.\n"
             . "6. Create Rank Math fields: SEO title, meta description, focus keyword, and WordPress tags. Do not return any SEO score.\n"
             . "7. Tables are optional and only for genuinely structured facts already present. Charts are optional and only for real comparable numbers already present. Never invent numbers or estimates.\n"
             . "8. Do not generate social media captions, push text, X posts, Facebook posts, Telegram posts, LinkedIn posts, or related-story boxes.\n"
@@ -635,10 +629,10 @@ class AIN_Writer {
     }
 
     private static function allowed_production_link_urls( $source_links, $internal_link_map ) {
+        // External source URLs are intentionally not allowed in article bodies.
+        // This map is internal-only so production can improve SEO without turning
+        // the article into a source-summary/link roundup.
         $allowed = array();
-        foreach ( (array) $source_links as $src ) {
-            if ( ! empty( $src['url'] ) ) $allowed[ esc_url_raw( $src['url'] ) ] = 'external';
-        }
         $flatten = function( $items ) use ( &$allowed ) {
             foreach ( (array) $items as $item ) {
                 if ( ! empty( $item['url'] ) ) $allowed[ esc_url_raw( $item['url'] ) ] = 'internal';
@@ -654,7 +648,6 @@ class AIN_Writer {
     private static function apply_link_insertions( $content, $insertions, $allowed_urls, $settings ) {
         if ( empty( $insertions ) || ! is_array( $insertions ) || empty( $allowed_urls ) ) return $content;
         $max_internal = max( 0, (int) ( $settings['max_internal_links'] ?? 3 ) );
-        $used_external = 0;
         $used_internal = 0;
         $used_urls = array();
 
@@ -663,15 +656,14 @@ class AIN_Writer {
             $url = esc_url_raw( $link['url'] ?? '' );
             $anchor = trim( wp_strip_all_tags( (string) ( $link['anchor_text'] ?? '' ) ) );
             if ( ! $url || ! $anchor || ! isset( $allowed_urls[ $url ] ) || isset( $used_urls[ $url ] ) ) continue;
+            if ( 'internal' !== $allowed_urls[ $url ] ) continue;
             if ( strlen( $anchor ) < 3 || strlen( $anchor ) > 90 ) continue;
-            $type = $allowed_urls[ $url ];
-            if ( 'external' === $type && $used_external >= 2 ) continue;
-            if ( 'internal' === $type && $used_internal >= $max_internal ) continue;
-            $new_content = self::link_phrase_once( $content, $anchor, $url, 'external' === $type );
+            if ( $used_internal >= $max_internal ) continue;
+            $new_content = self::link_phrase_once( $content, $anchor, $url, false );
             if ( $new_content !== $content ) {
                 $content = $new_content;
                 $used_urls[ $url ] = true;
-                if ( 'external' === $type ) $used_external++; else $used_internal++;
+                $used_internal++;
             }
         }
         return $content;
@@ -721,49 +713,37 @@ class AIN_Writer {
         // Strip AI-template section labels. The paragraphs remain and read more like a normal news article.
         $bad_headings = '(Why\s+it\s+matters|What\s+happens\s+next|What\s+remains\s+uncertain|What\s+remains\s+unclear|Context|Background|Key\s+takeaways|The\s+bottom\s+line)';
         $content = preg_replace( '#<h[23][^>]*>\s*' . $bad_headings . '\s*</h[23]>\s*#i', '', $content );
-        $content = self::add_missing_natural_source_link( $content, $source_links );
+        $content = self::strip_external_links_from_content( $content );
         return trim( $content );
     }
 
     private static function add_missing_natural_source_link( $content, $source_links = array() ) {
-        if ( empty( $source_links ) || ! is_array( $source_links ) ) return $content;
-        if ( preg_match( '/<a\s+[^>]*href=["\']https?:\/\//i', $content ) ) return $content;
-        $first = reset( $source_links );
-        $url = esc_url_raw( $first['url'] ?? '' );
-        if ( ! $url ) return $content;
-        $publisher = sanitize_text_field( $first['publisher'] ?? '' );
-        if ( ! $publisher ) $publisher = sanitize_text_field( ain_safe_url_host( $url ) );
-        $candidates = array_filter( array_unique( array( $publisher, preg_replace( '/\..*$/', '', $publisher ) ) ) );
-        foreach ( $candidates as $candidate ) {
-            if ( strlen( $candidate ) < 3 ) continue;
-            $pattern = '/\b(' . preg_quote( $candidate, '/' ) . ')\b(?![^<]*>)/i';
-            $linked = preg_replace( $pattern, '<a href="' . esc_url( $url ) . '" rel="nofollow noopener" target="_blank">$1</a>', $content, 1, $count );
-            if ( $count ) return $linked;
-        }
-        // Do not force a link onto generic words such as "reported" or "according to".
-        // If the publisher/source name is not naturally present, leave the article unlinked.
+        // Deprecated: AI Newsroom no longer inserts external source links into articles.
         return $content;
     }
 
-    private static function ensure_external_source_link_rels( $content ) {
+    private static function strip_external_links_from_content( $content ) {
         $home_host = strtolower( ain_safe_url_host( home_url( '/' ) ) );
-        return preg_replace_callback( '/<a\s+([^>]*href=["\']https?:\/\/[^"\']+["\'][^>]*)>/i', function( $m ) use ( $home_host ) {
-            $attrs = $m[1];
-            if ( preg_match( '/href=["\']([^"\']+)["\']/i', $attrs, $hm ) ) {
-                $host = strtolower( ain_safe_url_host( $hm[1] ) );
-                if ( $host && $host !== $home_host ) {
-                    if ( ! preg_match( '/\srel=/i', $attrs ) ) {
-                        $attrs .= ' rel="nofollow noopener"';
-                    } elseif ( ! preg_match( '/nofollow/i', $attrs ) ) {
-                        $attrs = preg_replace( '/rel=["\']([^"\']*)["\']/i', 'rel="$1 nofollow noopener"', $attrs );
-                    }
-                    if ( ! preg_match( '/\starget=/i', $attrs ) ) {
-                        $attrs .= ' target="_blank"';
-                    }
-                }
+        $home_host = preg_replace( '/^www\./', '', $home_host );
+
+        return preg_replace_callback( '#<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>#is', function( $m ) use ( $home_host ) {
+            $url = html_entity_decode( $m[1], ENT_QUOTES );
+            $host = strtolower( ain_safe_url_host( $url ) );
+            $host = preg_replace( '/^www\./', '', $host );
+
+            // Keep relative links, anchors, mail/tel links, and same-site links.
+            if ( ! preg_match( '#^https?://#i', $url ) || ! $host || $host === $home_host ) {
+                return $m[0];
             }
-            return '<a ' . $attrs . '>';
+
+            // External links are unwrapped, preserving the visible words.
+            return $m[2];
         }, (string) $content );
+    }
+
+    private static function ensure_external_source_link_rels( $content ) {
+        // Backward-compatible wrapper. External article links are removed, not decorated.
+        return self::strip_external_links_from_content( $content );
     }
 
     private static function source_links_for_prompt( $research_pack, $raw, $item ) {

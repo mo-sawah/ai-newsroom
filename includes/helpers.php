@@ -33,11 +33,83 @@ function ain_default_settings() {
         'enable_topic_hub_links'         => 1,
         'enable_production_editor'       => 1,
         'max_internal_links'             => 3,
-        'site_voice'                     => 'Professional wire-service news voice. Accurate, neutral, concise, and specific. Use inverted-pyramid structure: lede first, attribution high, context and background lower. Prefer short paragraphs and active voice. Avoid SEO filler, generic AI transitions, commentary tone, and templated section labels such as Why it matters, What happens next, What remains uncertain, Context, The bottom line, or Key takeaways.',
-        'editor_prompt'                  => 'You are the assignment editor of a serious digital newsroom. Select and group only stories that have news value, freshness, relevance, and reader interest. Treat incoming URLs as raw reporting material. Group sources only when they describe the same specific development: the same event, announcement, filing, lawsuit, arrest, attack, policy decision, earnings result, launch, partnership, investigation, disaster, conflict update, or market-moving claim. Do not group sources only because they share the same person, company, country, industry, broad topic, or trip. If two stories share an entity but have different actions, claims, topic areas, consequences, or reader questions, keep them separate. Do not write the final article title; create only a working label, story brief, selection reason, research questions, and title direction. Reject thin, duplicate, irrelevant, promotional, or low-value items.',
-        'writer_prompt'                  => 'You are a senior wire-service reporter writing only the article draft. Produce a polished, publication-ready news article in inverted-pyramid style, not a blog post, newsletter, explainer template, or SEO article. The lede must give the newest verified development in 35 words or fewer where possible. Use the nut graph shortly after the lede to explain significance without opinion. Use short paragraphs, active voice, neutral attribution, precise language, and natural human transitions. Do not create SEO metadata, social copy, charts, tables, image prompts, or source-list paragraphs. Do not fabricate facts, quotes, numbers, dates, names, links, or motives.',
-        'production_prompt'              => 'You are the production editor for AI Newsroom. Your job is to protect the finished article and prepare it for WordPress and Rank Math. Do not rewrite the article body. Do not change paragraph order, voice, lede, nut graph, quotes, numbers, or claims. Return production metadata and safe link instructions only. Add links only when the exact anchor text already exists naturally in the article and the URL is supplied. Use at most 2 external source links and respect the internal-link limit. Prefer category, tag, or relevant prior-post links only when they genuinely help the reader. Tables and charts are optional and should appear only when the story clearly contains structured facts or real comparable numbers. Never invent data. Create a clean SEO title, 150-160 character meta description, one natural focus keyword, and 2-5 WordPress tags. Do not generate social posts, push text, related boxes, or any SEO score.',
+        'site_voice'                     => 'Professional wire-service news voice. Accurate, neutral, concise, and specific. Use inverted-pyramid structure: lede first, attribution high, context and background lower. Prefer short paragraphs and active voice. Avoid SEO filler, generic AI transitions, commentary tone, and templated section labels such as Why it matters, What happens next, What remains uncertain, Context, The bottom line, or Key takeaways. Do not place external source hyperlinks inside article bodies.',
+        'editor_prompt'                  => 'You are the senior assignment editor for a professional digital newsroom. Your job is to review raw source material and turn it into clear reporting assignments. Treat sources as reporting material, not articles to rewrite. First, understand each source item separately: main entities, topic area, event type, core action, core claim, news peg, confirmed facts, facts that still need checking, source quality, and whether the item is original reporting, an official document, a press release, or republished coverage. Then group only sources that cover the same specific development. Do not group stories only because they share the same person, company, country, industry, or broad topic. A specific development may be an announcement, filing, arrest, lawsuit, attack, policy decision, earnings result, launch, partnership, investigation, court action, security incident, market-moving statement, or official confirmation. Keep separate developments separate, even if they involve the same person or company. For each approved story cluster, create a reporting brief with a working label, one-sentence summary of the actual news, why these sources belong together, why the story is worth covering, strongest reporting angle, likely lede, nut graph in one sentence, facts that need verification, sources that should be treated carefully, recommended research depth, suggested category and author. Reject thin, duplicate, outdated, promotional, weakly sourced, or low-value stories. Prefer fewer strong, well-supported stories over many thin articles.',
+        'writer_prompt'                  => 'You are an expert wire-service journalist writing for a premier global news agency. Synthesize the provided research pack into an objective, authoritative, and fast-paced news article. Do NOT write a book report summarizing individual sources. The first paragraph MUST start with a standard journalistic dateline in bold HTML, followed by an em dash. Format: <p><strong>CITY, Month Date</strong> — The lede continues here...</p>. Infer the most relevant city based on where the story is taking place or where markets/politics are reacting, and use today\'s date. The lede must be 25-35 words and deliver the newest verified development: who, what, when, and where. Use inverted pyramid structure: lede first, then a nut graph explaining broader market, political, public-interest, or local significance, then supporting details and quotes. Keep paragraphs extremely tight: 1 to 2 sentences maximum. Output clean HTML using <p>, <strong>, and <blockquote> only. Do NOT use <h2> or <h3> headings for standard news reports. Never use formulaic headers such as Why it matters, Background, Takeaways, Context, The bottom line, or What happens next. Never use filler phrases such as underscores, highlights, delve into, landscape, in a significant development, rapidly evolving, or it remains to be seen. Report verified facts directly as newsroom reporting. Use attribution only when necessary for disputed claims, quotes, legal allegations, forward-looking statements, or facts that belong clearly to an official document or named source. Do NOT create any external hyperlinks, source links, references lists, Sources section, Reporting based on paragraph, or link-based attribution. Do not fabricate facts, quotes, numbers, dates, names, links, motives, or allegations.',
+        'production_prompt'              => 'You are the production editor for AI Newsroom. Your job is to protect the finished article and prepare it for WordPress and Rank Math. Do not rewrite the article body. Do not change paragraph order, voice, lede, nut graph, quotes, numbers, or claims. Return production metadata only: clean SEO title, 150-160 character meta description, one natural focus keyword, 2-5 WordPress tags, optional image metadata, and optional table/chart data. You may suggest internal links only when the exact anchor text already exists naturally in the article and the internal URL is supplied. Never add, suggest, request, or preserve external source links in the article body. Tables and charts are optional and should appear only when the story clearly contains structured facts or real comparable numbers. Never invent data. Do not generate social posts, push text, related boxes, references, source lists, or any SEO score.',
     );
+}
+
+function ain_no_external_link_prompt_markers() {
+    return array(
+        'Smart Links',
+        'source links',
+        'source link',
+        'external source links',
+        'external links',
+        'external link',
+        'Add links only',
+        'safe link instructions',
+        'verified_external_source_links',
+        'max_external_source_links',
+        '<a href',
+        '<a>',
+        'Reuters reports',
+        'Bloomberg reported',
+    );
+}
+
+function ain_prompt_has_external_link_instructions( $prompt ) {
+    $prompt = (string) $prompt;
+    foreach ( ain_no_external_link_prompt_markers() as $marker ) {
+        if ( false !== stripos( $prompt, $marker ) ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function ain_clean_external_link_prompt( $prompt, $key ) {
+    $prompt = trim( (string) $prompt );
+    $defaults = ain_default_settings();
+    if ( in_array( $key, array( 'writer_prompt', 'production_prompt' ), true ) && ( '' === $prompt || ain_prompt_has_external_link_instructions( $prompt ) ) ) {
+        return $defaults[ $key ];
+    }
+    return $prompt;
+}
+
+function ain_upgrade_no_external_article_links_218() {
+    $settings = get_option( AIN_OPTION_KEY, array() );
+    if ( ! is_array( $settings ) ) {
+        $settings = array();
+    }
+    $defaults = ain_default_settings();
+
+    $settings['site_voice'] = $defaults['site_voice'];
+    $settings['editor_prompt'] = $defaults['editor_prompt'];
+    $settings['writer_prompt'] = $defaults['writer_prompt'];
+    $settings['production_prompt'] = $defaults['production_prompt'];
+    update_option( AIN_OPTION_KEY, $settings, false );
+
+    global $wpdb;
+    $table = ain_table( 'campaigns' );
+    $rows = $wpdb->get_results( "SELECT id, ai_config FROM {$table}" );
+    foreach ( $rows as $row ) {
+        $ai = ain_decode_json_field( $row->ai_config );
+        if ( ! is_array( $ai ) ) {
+            $ai = array();
+        }
+        $ai['editor_prompt'] = $defaults['editor_prompt'];
+        $ai['writer_prompt'] = $defaults['writer_prompt'];
+        $ai['production_prompt'] = $defaults['production_prompt'];
+        if ( ! isset( $ai['production_editor_mode'] ) ) {
+            $ai['production_editor_mode'] = 'global';
+        }
+        $wpdb->update( $table, array(
+            'ai_config' => wp_json_encode( $ai, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ),
+            'updated_at' => current_time( 'mysql' ),
+        ), array( 'id' => (int) $row->id ) );
+    }
 }
 
 
@@ -281,7 +353,8 @@ function ain_update_settings( $incoming ) {
         if ( is_numeric( $default ) ) {
             $clean[ $key ] = (int) $incoming[ $key ];
         } elseif ( in_array( $key, array( 'editor_prompt', 'writer_prompt', 'production_prompt', 'site_voice' ), true ) ) {
-            $clean[ $key ] = wp_kses_post( wp_unslash( $incoming[ $key ] ) );
+            $prompt_value = wp_kses_post( wp_unslash( $incoming[ $key ] ) );
+            $clean[ $key ] = function_exists( 'ain_clean_external_link_prompt' ) ? ain_clean_external_link_prompt( $prompt_value, $key ) : $prompt_value;
         } else {
             $clean[ $key ] = sanitize_text_field( wp_unslash( $incoming[ $key ] ) );
         }

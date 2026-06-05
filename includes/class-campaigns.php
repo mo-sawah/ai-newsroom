@@ -117,10 +117,18 @@ class AIN_Campaigns {
         $production_editor_mode = isset( $request['production_editor_mode'] ) ? sanitize_key( wp_unslash( $request['production_editor_mode'] ) ) : 'global';
         if ( ! in_array( $production_editor_mode, array( 'global', 'enabled', 'disabled' ), true ) ) $production_editor_mode = 'global';
 
+        $editor_prompt = isset( $request['editor_prompt'] ) ? wp_kses_post( wp_unslash( $request['editor_prompt'] ) ) : $defaults['ai_config']['editor_prompt'];
+        $writer_prompt = isset( $request['writer_prompt'] ) ? wp_kses_post( wp_unslash( $request['writer_prompt'] ) ) : $defaults['ai_config']['writer_prompt'];
+        $production_prompt = isset( $request['production_prompt'] ) ? wp_kses_post( wp_unslash( $request['production_prompt'] ) ) : $defaults['ai_config']['production_prompt'];
+        if ( function_exists( 'ain_clean_external_link_prompt' ) ) {
+            $writer_prompt = ain_clean_external_link_prompt( $writer_prompt, 'writer_prompt' );
+            $production_prompt = ain_clean_external_link_prompt( $production_prompt, 'production_prompt' );
+        }
+
         $ai = array(
-            'editor_prompt'       => isset( $request['editor_prompt'] ) ? wp_kses_post( wp_unslash( $request['editor_prompt'] ) ) : $defaults['ai_config']['editor_prompt'],
-            'writer_prompt'       => isset( $request['writer_prompt'] ) ? wp_kses_post( wp_unslash( $request['writer_prompt'] ) ) : $defaults['ai_config']['writer_prompt'],
-            'production_prompt'   => isset( $request['production_prompt'] ) ? wp_kses_post( wp_unslash( $request['production_prompt'] ) ) : $defaults['ai_config']['production_prompt'],
+            'editor_prompt'       => $editor_prompt,
+            'writer_prompt'       => $writer_prompt,
+            'production_prompt'   => $production_prompt,
             'production_editor_mode' => $production_editor_mode,
             'tone'                => isset( $request['tone'] ) ? wp_kses_post( wp_unslash( $request['tone'] ) ) : $defaults['ai_config']['tone'],
             'story_strategy'      => $story_strategy,
