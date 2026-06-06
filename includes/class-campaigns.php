@@ -176,6 +176,15 @@ class AIN_Campaigns {
             'temperature'         => isset( $request['temperature'] ) ? sanitize_text_field( wp_unslash( $request['temperature'] ) ) : '0.35',
         );
 
+        if ( 'x_twitter' === $type ) {
+            // X/Twitter posts are thin by nature; article quality depends on verification/context.
+            // Force the research pack + web search on for this campaign type even if the checkbox is missed.
+            $ai['enable_research_pack'] = 1;
+            $ai['enable_web_search'] = 1;
+            $ai['search_result_count'] = max( 6, (int) $ai['search_result_count'] );
+            $ai['research_depth'] = 'deep' === $research_depth ? 'deep' : 'balanced';
+        }
+
         $pub = array(
             'publish_mode'      => isset( $request['publish_mode'] ) ? sanitize_key( wp_unslash( $request['publish_mode'] ) ) : 'draft',
             'min_quality_score' => isset( $request['min_quality_score'] ) ? max( 0, min( 100, (int) $request['min_quality_score'] ) ) : 75,

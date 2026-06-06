@@ -524,6 +524,7 @@ class AIN_AI {
         $system = "You are the X/Twitter intake editor for a professional newsroom. Today is {$current_date}.\n\n"
             . "Judge each post independently. Return one decision per approved post. Never combine multiple timeline posts into one story cluster. Every approved story must contain EXACTLY ONE source_id.\n\n"
             . "Your job is to find realistic news pegs without being timid. A post can be newsworthy even if it is sarcastic, informal, provocative, or short, if it contains a checkable public-interest claim, official statement, market-moving claim, legal/political allegation, policy signal, company/product announcement, crisis update, or statement likely to trigger response.\n\n"
+            . "The output must be a REPORTING ASSIGNMENT, not a tweet summary. The working_label, story_summary, title_direction, and editorial_angle must describe the real-world news question or development behind the post. Avoid labels like 'White House posts...', 'X post says...', 'on X', or 'no details found'.\n\n"
             . "Do not block sensitive or explosive claims just because they may be disputed. Instead, approve them as cautious reporting assignments when the author is influential and the claim can be verified or contextualized by web research. Mark the caution clearly in facts_to_verify and what_to_avoid.\n\n"
             . "Reject ordinary memes, vague insults with no checkable claim, pure engagement bait, personal banter, repeated slogans, and duplicate posts that add no new information.\n\n"
             . "If a topic_focus is blank, cover anything newsworthy from the monitored accounts. If topic_focus is present, use it as a soft preference unless the post is clearly high-impact.\n\n"
@@ -749,6 +750,14 @@ class AIN_AI {
         $story_desk = $raw['story_cluster'] ?? array();
         $working_label = $story_desk['working_label'] ?? ( $item->suggested_title ?: $item->source_title );
 
+        $is_x_twitter = ( 'x_twitter' === $campaign->type );
+        if ( $is_x_twitter ) {
+            // X/Twitter posts are only news pegs. Good output requires outside verification/context,
+            // so force the research step to behave like a verification desk when web search is globally available.
+            $search_enabled = true;
+            $search_result_count = max( 6, $search_result_count );
+        }
+
         $payload = array(
             'campaign' => array(
                 'name' => $campaign->name,
@@ -785,7 +794,16 @@ class AIN_AI {
             ),
             'source_contexts' => $source_contexts,
             'existing_research_pack' => $existing,
-            'search_instructions' => $search_enabled ? "Use web search where needed. Prefer primary/official sources and reliable publishers. Use no more than {$search_result_count} high-value outside sources." : 'Do not use outside web search. Work only with supplied source contexts.',
+            'search_instructions' => $search_enabled ? ( $is_x_twitter
+                ? "MANDATORY for X/Twitter Monitor: use web search to verify and expand the post into a real news story. Treat the post as the trigger, not the article subject. Search for official statements, government/company pages, reputable news coverage, filings, transcripts, data, and context. Use no more than {$search_result_count} high-value outside sources. If the post cannot be verified or contextualized, clearly say so in caution notes and recommend a cautious event-led headline, not a headline about the post itself."
+                : "Use web search where needed. Prefer primary/official sources and reliable publishers. Use no more than {$search_result_count} high-value outside sources." )
+                : 'Do not use outside web search. Work only with supplied source contexts.',
+            'x_twitter_reporting_contract' => $is_x_twitter ? array(
+                'tweet_is_only_news_peg' => true,
+                'forbidden_headline_frames' => array( 'posts on X', 'tweets on X', 'says on X', 'on X; no policy details', 'no accompanying details' ),
+                'desired_headline_frame' => 'event/outcome/claim-led headline based on verified context, not platform activity',
+                'minimum_context_needed' => 'who made the statement, what real-world issue it concerns, what is verifiable, what official/reliable context exists, and what remains unconfirmed',
+            ) : array(),
             'required_output' => array(
                 'finalized' => true,
                 'strongest_news_peg' => 'the most concrete verified event, filing, disclosure, statement, launch, arrest, lawsuit, report, or development; empty only if this is truly an analysis/backgrounder',
@@ -796,7 +814,7 @@ class AIN_AI {
                     'event-led headline option 2',
                     'context/analysis headline option only if appropriate',
                 ),
-                'recommended_headline' => 'best article headline after research; specific, accurate, and human newsroom style',
+                'recommended_headline' => $is_x_twitter ? 'best article headline after verification; MUST be event/claim/policy/action-led, never “X posts/tweets/says on X” and never about lack of details unless that absence is itself the verified news' : 'best article headline after research; specific, accurate, and human newsroom style',
                 'headline_rationale' => 'why this headline is the strongest and what verified fact it uses',
                 'seo_angle' => 'search-friendly angle without clickbait',
                 'key_facts' => array(),
@@ -824,6 +842,7 @@ class AIN_AI {
             . "The story desk working_label is NOT the final article title. Create headline_options and one recommended_headline only after checking the facts. "
             . "Prepare source guidance for natural in-story attribution and for the Fact Check & Sources box. Do not recommend external links inside article paragraphs and do not recommend a source list inside the article body. "
             . "If web search is available, prefer official/primary sources, reputable newsrooms, government/company pages, court/regulatory docs, and direct statements. "
+            . ( $is_x_twitter ? "X/Twitter Monitor special rule: the post is only a reporting tip/news peg. The research pack must transform it into a real story angle using verification and context. Do not frame the recommended headline as 'White House posts...', 'X post says...', 'on X', or 'no details found' unless the absence of details is itself confirmed and central. If only the post exists and there is no useful confirmation, make the caution clear and recommend holding for review rather than producing a thin article. " : "" )
             . "Return ONLY valid JSON.";
 
         $args = array(
@@ -942,7 +961,7 @@ class AIN_AI {
     public static function mode_instructions( $type ) {
         switch ( $type ) {
             case 'x_twitter':
-                return 'X / TWITTER MONITOR RULES: Treat each post as a possible news peg, not as a finished story. Be selective but do not be timid. Public-interest claims, explosive allegations, market-moving statements, policy claims, legal accusations, product/company announcements, government remarks, major public figure conflicts, and statements likely to trigger official responses can be newsworthy even if phrased casually, sarcastically, or like a joke. Do not reject an item merely because it is edgy, informal, short, or controversial. Instead, approve it when the author is influential, the claim is specific enough to verify, or the post could create political, legal, market, technology, public-safety, or reputation impact. For allegations or sensitive claims, require web verification before writing and clearly mark attribution/caution in the research pack. Reject only ordinary memes, vague insults with no checkable claim, pure engagement bait, personal banter, repeated slogans, and posts with no concrete public-interest development. Score realistically: 55-69 = worth review/queue if influential or checkable, 70-84 = strong news peg, 85+ = urgent or high-impact. The final article must not be “someone tweeted”; it must use web search to verify, contextualize, and explain the development.';
+                return 'X / TWITTER MONITOR RULES: Treat each post as a possible news peg, not as a finished story. Be selective but do not be timid. Public-interest claims, explosive allegations, market-moving statements, policy claims, legal accusations, product/company announcements, government remarks, major public figure conflicts, and statements likely to trigger official responses can be newsworthy even if phrased casually, sarcastically, or like a joke. Do not reject an item merely because it is edgy, informal, short, or controversial. Instead, approve it when the author is influential, the claim is specific enough to verify, or the post could create political, legal, market, technology, public-safety, or reputation impact. For allegations or sensitive claims, require web verification before writing and clearly mark attribution/caution in the research pack. Reject only ordinary memes, vague insults with no checkable claim, pure engagement bait, personal banter, repeated slogans, and posts with no concrete public-interest development. Score realistically: 55-69 = worth review/queue if influential or checkable, 70-84 = strong news peg, 85+ = urgent or high-impact. The final article must not be “someone tweeted”; it must use web search to verify, contextualize, and explain the development. Headlines and ledes must be about the real-world development, claim, policy, response, market impact, or verification result — never about the platform activity itself.';
             case 'press_release':
                 return 'PRESS RELEASE RULES: Treat every source as a press release or organization announcement. Extract the real news value. Remove promotional language, hype, slogans, and marketing claims. Attribute claims to the company or organization. Add neutral context. Do not make the article sound like PR.';
             case 'perplexity':

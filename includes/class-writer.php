@@ -195,7 +195,16 @@ class AIN_Writer {
                 'strongest_news_peg' => $research_pack['strongest_news_peg'] ?? '',
                 'headline_rationale' => $research_pack['headline_rationale'] ?? '',
                 'title_direction' => $research_pack['story_desk_assignment']['title_direction'] ?? '',
+                'x_twitter_headline_rule' => 'x_twitter' === $campaign->type ? 'The final headline must be about the real-world development/claim/verification result, not that someone posted on X. Avoid: posts, tweets, on X, says on X, no details found, questions about meaning. Use event-led or claim-led framing.' : '',
             ),
+            'x_twitter_reporting_rules' => 'x_twitter' === $campaign->type ? array(
+                'tweet_is_tip_not_story' => true,
+                'must_use_research_pack_context' => true,
+                'write_about' => 'the real-world issue, official statement, policy claim, allegation, reaction, market/legal/political impact, or verified context behind the post',
+                'do_not_write_about' => array( 'the existence of a tweet as the main event', 'a social-media post with no added context', 'lack of accompanying details unless that absence is the actual verified news' ),
+                'tweet_embed_note' => 'The original post can be embedded as evidence/context, but the article itself should not be built around the phrase “posted on X.”',
+                'if_verification_is_weak' => 'write a cautious, short, clearly attributed story focused on what is confirmed and what remains unverified, or lower the quality score; do not invent policy details.',
+            ) : array(),
             'source_contexts' => $source_contexts,
             'research_pack' => $research_pack,
             'editorial_assignment' => $item->ai_summary,
@@ -252,6 +261,12 @@ class AIN_Writer {
             . "5. Do not add a final source list, references block, or generic headings such as 'Why it matters', 'Background', 'Context', 'Key takeaways', or 'The bottom line'.\n"
             . "6. Do not create any hyperlinks or <a> tags in the article draft. Use plain-text attribution only when journalism requires it. Internal links are handled later by production.\n"
             . "7. Do not fabricate quotes, data, names, dates, motives, or allegations.\n"
+            . ( 'x_twitter' === $campaign->type ? "\nX/TWITTER MONITOR ARTICLE RULES:\n"
+                . "- The X post is a tip/news peg, not the subject of the article. Write about the real-world development, claim, policy issue, official remarks, response, or verified context behind it.\n"
+                . "- Do NOT frame the final_title, lede, slug, or excerpt as: 'White House posts...', 'X post says...', 'posted on X', 'tweeted', 'on X', 'no accompanying details', or 'draws questions'.\n"
+                . "- Use the research_pack headline guidance, strongest_news_peg, key_facts, background_context, and verified_sources to build a real wire story.\n"
+                . "- If the post makes a claim that web research cannot verify, write a cautious attribution-led story about the claim and the available context; do not invent details.\n"
+                . "- The original post may be mentioned once only if needed for attribution, but the article must add context beyond the post.\n" : "" )
             . "8. Return ONLY valid JSON, no markdown fences.";
 
         $response = AIN_AI::openrouter_chat(
@@ -271,6 +286,40 @@ class AIN_Writer {
         if ( ! is_array( $draft ) || empty( $draft['content'] ) || empty( $draft['final_title'] ) ) {
             return new WP_Error( 'bad_writer_json', 'AI article draft writer returned invalid JSON.' );
         }
+        if ( 'x_twitter' === $campaign->type ) {
+            $draft = self::polish_x_twitter_draft_frame( $draft, $prompt_data );
+        }
+        return $draft;
+    }
+
+    private static function polish_x_twitter_draft_frame( $draft, $prompt_data ) {
+        if ( ! is_array( $draft ) ) return $draft;
+
+        $bad_title = false;
+        $title = (string) ( $draft['final_title'] ?? '' );
+        if ( preg_match( '/\b(posts?|tweets?|posted|tweeted)\b.*\b(X|Twitter)\b/i', $title ) || preg_match( '/\bon X\b/i', $title ) || preg_match( '/no accompanying|no policy details|draws questions/i', $title ) ) {
+            $bad_title = true;
+        }
+
+        if ( $bad_title ) {
+            $headline_guidance = is_array( $prompt_data['headline_guidance'] ?? null ) ? $prompt_data['headline_guidance'] : array();
+            $candidates = array();
+            if ( ! empty( $headline_guidance['research_recommended_headline'] ) ) $candidates[] = $headline_guidance['research_recommended_headline'];
+            if ( ! empty( $headline_guidance['research_headline_options'] ) && is_array( $headline_guidance['research_headline_options'] ) ) {
+                foreach ( $headline_guidance['research_headline_options'] as $candidate ) $candidates[] = $candidate;
+            }
+            if ( ! empty( $headline_guidance['strongest_news_peg'] ) ) $candidates[] = $headline_guidance['strongest_news_peg'];
+
+            foreach ( $candidates as $candidate ) {
+                $candidate = sanitize_text_field( (string) $candidate );
+                if ( strlen( $candidate ) < 18 ) continue;
+                if ( preg_match( '/\b(posts?|tweets?|posted|tweeted)\b.*\b(X|Twitter)\b/i', $candidate ) || preg_match( '/\bon X\b/i', $candidate ) || preg_match( '/no accompanying|no policy details|draws questions/i', $candidate ) ) continue;
+                $draft['final_title'] = $candidate;
+                $draft['slug'] = sanitize_title( $candidate );
+                break;
+            }
+        }
+
         return $draft;
     }
 
