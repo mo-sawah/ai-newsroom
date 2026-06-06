@@ -312,6 +312,13 @@ class AIN_AI {
         $settings = ain_get_settings();
         if ( empty( $items ) ) return array();
 
+        // X/Twitter Monitor is a news-peg intake, not a normal multi-source feed.
+        // Each post must be judged independently so one account's recent timeline does not become
+        // a single huge "Multisource" cluster. Related web context is added later during research.
+        if ( 'x_twitter' === $campaign->type ) {
+            return self::x_twitter_story_decisions( $items, $campaign );
+        }
+
         $strategy = $campaign->ai_config['story_strategy'] ?? $settings['default_story_strategy'] ?? 'smart';
         if ( in_array( $strategy, array( 'off', 'source_first' ), true ) ) {
             $plans = self::editorial_plan( $items, $campaign );
@@ -443,6 +450,178 @@ class AIN_AI {
         return new WP_Error( 'bad_story_desk_json', 'AI story desk returned invalid JSON.' );
     }
 
+    private static function x_twitter_story_decisions( $items, $campaign ) {
+        $campaign = AIN_Campaigns::parse( $campaign );
+        $settings = ain_get_settings();
+        $topic_focus = trim( (string) ( $campaign->source_config['topic_query'] ?? '' ) );
+        $min_score = max( 0, min( 100, (int) ( $campaign->source_config['x_min_news_score'] ?? 55 ) ) );
+
+        $compact = array();
+        foreach ( array_values( $items ) as $item ) {
+            $raw = is_array( $item['raw'] ?? null ) ? $item['raw'] : array();
+            $compact[] = array(
+                'source_id'   => $item['source_id'] ?? '',
+                'author'      => array(
+                    'username' => $item['x_author_username'] ?? '',
+                    'name'     => $item['x_author_name'] ?? '',
+                ),
+                'post_type'   => $item['x_post_type'] ?? 'original_post',
+                'title'       => $item['title'] ?? '',
+                'text'        => trim( wp_strip_all_tags( (string) ( $raw['text'] ?? ( $item['description'] ?? '' ) ) ) ),
+                'description' => $item['description'] ?? '',
+                'url'         => $item['url'] ?? '',
+                'published'   => $item['published'] ?? '',
+                'metrics'     => $item['x_metrics'] ?? array(),
+            );
+        }
+
+        $payload = array(
+            'campaign' => array(
+                'id' => (int) $campaign->id,
+                'name' => $campaign->name,
+                'type' => $campaign->type,
+                'topic_focus' => $topic_focus,
+                'minimum_newsworthiness_score' => $min_score,
+                'rules' => self::mode_instructions( $campaign->type ),
+            ),
+            'available_authors' => self::available_authors(),
+            'available_categories' => self::available_categories(),
+            'posts' => $compact,
+            'required_output' => array(
+                'stories' => array(
+                    array(
+                        'story_id' => 'stable id from the single source_id',
+                        'approved' => true,
+                        'source_ids' => array( 'EXACTLY ONE source_id only' ),
+                        'primary_source_id' => 'same single source_id',
+                        'working_label' => 'internal working label, not a final headline',
+                        'story_summary' => '2-4 sentence reporting brief explaining the post and why it may be newsworthy',
+                        'selection_reason' => 'why this post deserves reporting, or why it is a sensitive/checkable news peg',
+                        'grouping_logic' => 'single-post intake: do not group unrelated timeline posts',
+                        'split_logic' => 'note if other posts were kept separate or rejected as duplicates',
+                        'topic_area' => 'specific topic area',
+                        'event_type' => 'announcement, allegation, policy claim, public remarks, market-moving claim, legal threat, government action, etc.',
+                        'core_action' => 'what happened or what was said',
+                        'core_claim' => 'the exact checkable claim or development',
+                        'news_peg' => 'newest concrete development to verify through web research',
+                        'editorial_angle' => 'how a reporter should verify and contextualize it',
+                        'why_it_matters' => 'public interest, political/business/legal/market impact',
+                        'research_questions' => array( 'specific questions OpenRouter web search should verify before writing' ),
+                        'facts_to_verify' => array( 'specific claims, names, dates, numbers, quotes to verify' ),
+                        'title_direction' => 'guidance for headline framing after verification',
+                        'what_to_avoid' => array( 'do not present unverified allegations as fact', 'do not write “someone tweeted” as the whole story' ),
+                        'image_prompt' => 'editorial image prompt, no text overlay',
+                        'author_id' => 'integer from available_authors',
+                        'category_id' => 'integer from available_categories',
+                        'priority' => '0-100 urgency/news value',
+                        'quality_score' => '0-100 newsworthiness score',
+                    ),
+                ),
+            ),
+        );
+
+        $current_date = date( 'l, F j, Y', current_time( 'timestamp' ) );
+        $system = "You are the X/Twitter intake editor for a professional newsroom. Today is {$current_date}.\n\n"
+            . "Judge each post independently. Return one decision per approved post. Never combine multiple timeline posts into one story cluster. Every approved story must contain EXACTLY ONE source_id.\n\n"
+            . "Your job is to find realistic news pegs without being timid. A post can be newsworthy even if it is sarcastic, informal, provocative, or short, if it contains a checkable public-interest claim, official statement, market-moving claim, legal/political allegation, policy signal, company/product announcement, crisis update, or statement likely to trigger response.\n\n"
+            . "Do not block sensitive or explosive claims just because they may be disputed. Instead, approve them as cautious reporting assignments when the author is influential and the claim can be verified or contextualized by web research. Mark the caution clearly in facts_to_verify and what_to_avoid.\n\n"
+            . "Reject ordinary memes, vague insults with no checkable claim, pure engagement bait, personal banter, repeated slogans, and duplicate posts that add no new information.\n\n"
+            . "If a topic_focus is blank, cover anything newsworthy from the monitored accounts. If topic_focus is present, use it as a soft preference unless the post is clearly high-impact.\n\n"
+            . "Scoring guide: 45-54 = maybe queue only if account is official/high-impact; 55-69 = worth covering or reviewing; 70-84 = strong news peg; 85+ = urgent/high-impact. Do not require a perfect score for public-interest posts.\n\n"
+            . "Return ONLY valid JSON with key stories. No markdown.\n\n"
+            . self::mode_instructions( $campaign->type );
+
+        $response = self::openrouter_chat(
+            array(
+                array( 'role' => 'system', 'content' => $system ),
+                array( 'role' => 'user', 'content' => wp_json_encode( $payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ),
+            ),
+            array(
+                'model'       => $settings['openrouter_research_model'] ?: $settings['openrouter_text_model'],
+                'json'        => true,
+                'temperature' => 0.12,
+                'timeout'     => 180,
+            )
+        );
+        if ( is_wp_error( $response ) ) return $response;
+        $decoded = ain_json_decode_loose( $response['content'] );
+        if ( empty( $decoded['stories'] ) || ! is_array( $decoded['stories'] ) ) {
+            return new WP_Error( 'bad_x_twitter_story_json', 'X/Twitter story desk returned invalid JSON.' );
+        }
+
+        $valid_ids = array();
+        foreach ( $items as $item ) {
+            if ( ! empty( $item['source_id'] ) ) $valid_ids[ $item['source_id'] ] = $item;
+        }
+
+        $clean = array();
+        $approved = 0;
+        $low_score = 0;
+        $multi_fixed = 0;
+        foreach ( $decoded['stories'] as $story ) {
+            if ( empty( $story['approved'] ) ) continue;
+            $source_ids = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $story['source_ids'] ?? array() ) ) ) );
+            $source_ids = array_values( array_intersect( $source_ids, array_keys( $valid_ids ) ) );
+            if ( empty( $source_ids ) ) continue;
+            if ( count( $source_ids ) > 1 ) {
+                $source_ids = array( sanitize_text_field( $story['primary_source_id'] ?? $source_ids[0] ) );
+                if ( empty( $source_ids[0] ) || ! isset( $valid_ids[ $source_ids[0] ] ) ) $source_ids = array_slice( array_values( array_intersect( (array) ( $story['source_ids'] ?? array() ), array_keys( $valid_ids ) ) ), 0, 1 );
+                $multi_fixed++;
+            }
+            $sid = $source_ids[0];
+            if ( ! isset( $valid_ids[ $sid ] ) ) continue;
+
+            $quality = max( 0, min( 100, (int) ( $story['quality_score'] ?? ( $story['priority'] ?? 0 ) ) ) );
+            $priority = max( 0, min( 100, (int) ( $story['priority'] ?? $quality ) ) );
+            $score = max( $quality, $priority );
+            if ( $score < $min_score ) {
+                $low_score++;
+                continue;
+            }
+
+            $source = $valid_ids[ $sid ];
+            $clean[] = array(
+                'story_id'           => sanitize_text_field( $story['story_id'] ?? ( 'x_story_' . md5( $sid ) ) ),
+                'approved'           => true,
+                'source_ids'         => array( $sid ),
+                'primary_source_id'  => $sid,
+                'working_label'      => sanitize_text_field( $story['working_label'] ?? ( $source['title'] ?? 'X/Twitter news peg' ) ),
+                'story_summary'      => wp_kses_post( $story['story_summary'] ?? ( $source['description'] ?? '' ) ),
+                'selection_reason'   => wp_kses_post( $story['selection_reason'] ?? 'Approved as a checkable X/Twitter news peg.' ),
+                'grouping_logic'     => 'Single-post X/Twitter intake. Not grouped with unrelated timeline posts.',
+                'split_logic'        => wp_kses_post( $story['split_logic'] ?? 'Other posts remain separate unless they are true duplicates.' ),
+                'topic_area'         => sanitize_text_field( $story['topic_area'] ?? '' ),
+                'event_type'         => sanitize_text_field( $story['event_type'] ?? '' ),
+                'core_action'        => sanitize_text_field( $story['core_action'] ?? '' ),
+                'core_claim'         => sanitize_text_field( $story['core_claim'] ?? '' ),
+                'news_peg'           => sanitize_text_field( $story['news_peg'] ?? '' ),
+                'editorial_angle'    => wp_kses_post( $story['editorial_angle'] ?? '' ),
+                'why_it_matters'     => wp_kses_post( $story['why_it_matters'] ?? '' ),
+                'research_questions' => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $story['research_questions'] ?? array() ) ) ) ),
+                'facts_to_verify'    => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $story['facts_to_verify'] ?? array() ) ) ) ),
+                'title_direction'    => wp_kses_post( $story['title_direction'] ?? 'Create the final title after web research verifies the strongest news peg.' ),
+                'what_to_avoid'      => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $story['what_to_avoid'] ?? array() ) ) ) ),
+                'image_prompt'       => sanitize_text_field( $story['image_prompt'] ?? '' ),
+                'author_id'          => (int) ( $story['author_id'] ?? 0 ),
+                'category_id'        => (int) ( $story['category_id'] ?? 0 ),
+                'priority'           => $priority,
+                'quality_score'      => $quality,
+            );
+            $approved++;
+        }
+
+        ain_log( 'info', 'X/Twitter newsworthiness review complete.', array(
+            'reviewed' => count( $items ),
+            'approved' => $approved,
+            'rejected_or_low_score' => max( 0, count( $items ) - $approved ),
+            'low_score_rejected' => $low_score,
+            'multi_source_outputs_fixed' => $multi_fixed,
+            'minimum_score' => $min_score,
+        ), $campaign->id );
+
+        return $clean;
+    }
+
     private static function clean_story_clusters( $stories, $items, $strategy = 'smart' ) {
         $valid_ids = array();
         foreach ( $items as $item ) {
@@ -491,6 +670,9 @@ class AIN_AI {
             $story['quality_score'] = max( 0, min( 100, (int) ( $story['quality_score'] ?? 0 ) ) );
 
             $clean[] = $story;
+        }
+        if ( in_array( $strategy, array( 'source_first', 'no_merge' ), true ) ) {
+            return $clean;
         }
         return self::merge_similar_story_clusters( $clean, $strategy );
     }

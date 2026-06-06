@@ -498,6 +498,47 @@ class AIN_Writer {
         return $contexts;
     }
 
+    private static function source_text_context_from_item( $source ) {
+        if ( ! is_array( $source ) ) return '';
+        $parts = array();
+
+        foreach ( array( 'title', 'source_title', 'description', 'source_excerpt', 'content', 'text', 'summary' ) as $key ) {
+            if ( ! empty( $source[ $key ] ) && is_string( $source[ $key ] ) ) {
+                $parts[] = $source[ $key ];
+            }
+        }
+
+        $raw = is_array( $source['raw'] ?? null ) ? $source['raw'] : array();
+        if ( ! empty( $raw['text'] ) ) {
+            $parts[] = 'Original X/Twitter post text: ' . $raw['text'];
+        }
+        if ( ! empty( $raw['full_text'] ) ) {
+            $parts[] = 'Original X/Twitter post text: ' . $raw['full_text'];
+        }
+        if ( ! empty( $raw['quoted_tweet'] ) && is_array( $raw['quoted_tweet'] ) ) {
+            $qt = trim( (string) ( $raw['quoted_tweet']['text'] ?? ( $raw['quoted_tweet']['full_text'] ?? '' ) ) );
+            if ( '' !== $qt ) {
+                $parts[] = 'Quoted post text: ' . $qt;
+            }
+        }
+
+        if ( ! empty( $source['x_metrics'] ) && is_array( $source['x_metrics'] ) ) {
+            $m = $source['x_metrics'];
+            $parts[] = sprintf(
+                'X/Twitter metrics: likes %d, reposts %d, replies %d, quotes %d, views %d.',
+                (int) ( $m['likes'] ?? 0 ),
+                (int) ( $m['reposts'] ?? 0 ),
+                (int) ( $m['replies'] ?? 0 ),
+                (int) ( $m['quotes'] ?? 0 ),
+                (int) ( $m['views'] ?? 0 )
+            );
+        }
+
+        $text = html_entity_decode( wp_strip_all_tags( implode( "\n\n", array_filter( $parts ) ) ) );
+        $text = preg_replace( '/\s+/', ' ', $text );
+        return wp_trim_words( trim( $text ), 1200, '...' );
+    }
+
     public static function fetch_url_context( $url ) {
         if ( empty( $url ) || ! filter_var( $url, FILTER_VALIDATE_URL ) ) return '';
         if ( 0 === strpos( $url, home_url( '/' ) ) ) return '';
