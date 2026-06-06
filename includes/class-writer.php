@@ -1240,15 +1240,25 @@ class AIN_Writer {
     }
 
     private static function maybe_featured_image( $post_id, $draft, $item, $campaign ) {
-        if ( empty( $campaign->media_config['generate_images'] ) ) return;
         $raw = ain_decode_json_field( $item->raw_payload );
         $image_url = '';
 
         if ( ! empty( $campaign->media_config['use_source_image'] ) ) {
-            if ( ! empty( $raw['primary_source']['image'] ) ) $image_url = $raw['primary_source']['image'];
-            elseif ( ! empty( $raw['image'] ) ) $image_url = $raw['image'];
-            elseif ( ! empty( $raw['sources'][0]['image'] ) ) $image_url = $raw['sources'][0]['image'];
+            if ( 'x_twitter' === $campaign->type ) {
+                if ( ! empty( $raw['primary_source']['x_tweet_image'] ) ) $image_url = $raw['primary_source']['x_tweet_image'];
+                elseif ( ! empty( $raw['primary_source']['image'] ) ) $image_url = $raw['primary_source']['image'];
+                elseif ( ! empty( $raw['image'] ) ) $image_url = $raw['image'];
+                elseif ( ! empty( $raw['sources'][0]['x_tweet_image'] ) ) $image_url = $raw['sources'][0]['x_tweet_image'];
+                elseif ( ! empty( $raw['sources'][0]['image'] ) ) $image_url = $raw['sources'][0]['image'];
+            } else {
+                if ( ! empty( $raw['primary_source']['image'] ) ) $image_url = $raw['primary_source']['image'];
+                elseif ( ! empty( $raw['image'] ) ) $image_url = $raw['image'];
+                elseif ( ! empty( $raw['sources'][0]['image'] ) ) $image_url = $raw['sources'][0]['image'];
+            }
         }
+
+        if ( ! $image_url && empty( $campaign->media_config['generate_images'] ) ) return;
+
         if ( ! $image_url && ! empty( $campaign->media_config['use_pexels'] ) ) {
             $image_url = AIN_Media::pexels_image_url( $draft['inline_media_query'] ?? $draft['focus_keyword'] ?? $draft['final_title'] );
         }

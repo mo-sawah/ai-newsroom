@@ -591,6 +591,8 @@ class AIN_Sources {
                 if ( ! empty( $tweet['isReply'] ) || ! empty( $tweet['inReplyToId'] ) ) $post_type = 'reply';
                 if ( self::x_nested_tweet_present( $tweet['retweeted_tweet'] ?? null ) ) $post_type = 'retweet';
 
+                $tweet_image = self::x_extract_primary_image_url( $tweet );
+
                 $items[] = array(
                     'source_id'   => 'x_' . $id,
                     'source_name' => 'X / @' . $username,
@@ -598,7 +600,9 @@ class AIN_Sources {
                     'description' => self::x_tweet_description( $text, $metrics, $post_type ),
                     'url'         => $tweet_url,
                     'published'   => sanitize_text_field( $tweet['createdAt'] ?? '' ),
-                    'image'       => esc_url_raw( $author['profilePicture'] ?? '' ),
+                    'image'       => $tweet_image,
+                    'x_tweet_image' => $tweet_image,
+                    'x_author_profile_image' => esc_url_raw( $author['profilePicture'] ?? '' ),
                     'x_tweet_id'  => $id,
                     'x_author_username' => $username,
                     'x_author_name' => $display_name,
@@ -614,6 +618,66 @@ class AIN_Sources {
         ain_log( 'info', 'X/Twitter source fetch complete.', $totals, $campaign->id );
 
         return $items;
+    }
+
+
+    private static function x_extract_primary_image_url( $tweet ) {
+        $candidates = array();
+
+        self::x_collect_media_image_candidates( $candidates, $tweet['media'] ?? null );
+        self::x_collect_media_image_candidates( $candidates, $tweet['photos'] ?? null );
+        self::x_collect_media_image_candidates( $candidates, $tweet['entities']['media'] ?? null );
+        self::x_collect_media_image_candidates( $candidates, $tweet['extended_entities']['media'] ?? null );
+        self::x_collect_media_image_candidates( $candidates, $tweet['extendedEntities']['media'] ?? null );
+        self::x_collect_media_image_candidates( $candidates, $tweet['attachments']['media'] ?? null );
+
+        if ( ! empty( $tweet['quoted_tweet'] ) && is_array( $tweet['quoted_tweet'] ) ) {
+            self::x_collect_media_image_candidates( $candidates, $tweet['quoted_tweet']['media'] ?? null );
+            self::x_collect_media_image_candidates( $candidates, $tweet['quoted_tweet']['photos'] ?? null );
+            self::x_collect_media_image_candidates( $candidates, $tweet['quoted_tweet']['entities']['media'] ?? null );
+            self::x_collect_media_image_candidates( $candidates, $tweet['quoted_tweet']['extended_entities']['media'] ?? null );
+            self::x_collect_media_image_candidates( $candidates, $tweet['quoted_tweet']['extendedEntities']['media'] ?? null );
+        }
+
+        foreach ( $candidates as $url ) {
+            if ( $url ) return esc_url_raw( $url );
+        }
+        return '';
+    }
+
+    private static function x_collect_media_image_candidates( &$candidates, $value ) {
+        if ( empty( $value ) ) return;
+
+        if ( is_string( $value ) ) {
+            if ( preg_match( '#^https?://#i', $value ) ) {
+                $candidates[] = $value;
+            }
+            return;
+        }
+
+        if ( is_array( $value ) ) {
+            $is_assoc = array_keys( $value ) !== range( 0, count( $value ) - 1 );
+            if ( $is_assoc ) {
+                $type = strtolower( (string) ( $value['type'] ?? '' ) );
+                if ( $type && false !== strpos( $type, 'video' ) && empty( $value['media_url'] ) && empty( $value['media_url_https'] ) && empty( $value['url'] ) ) {
+                    return;
+                }
+                foreach ( array( 'media_url_https', 'media_url', 'url', 'image', 'imageUrl', 'image_url', 'thumbnail_url', 'thumbnailUrl', 'preview_image_url', 'previewImageUrl' ) as $key ) {
+                    if ( ! empty( $value[ $key ] ) && is_string( $value[ $key ] ) && preg_match( '#^https?://#i', $value[ $key ] ) ) {
+                        $candidates[] = $value[ $key ];
+                    }
+                }
+                foreach ( array( 'src', 'sizes', 'variants' ) as $nested_key ) {
+                    if ( isset( $value[ $nested_key ] ) ) {
+                        self::x_collect_media_image_candidates( $candidates, $value[ $nested_key ] );
+                    }
+                }
+            } else {
+                foreach ( $value as $item ) {
+                    self::x_collect_media_image_candidates( $candidates, $item );
+                }
+            }
+        }
     }
 
     private static function x_normalize_handle_input( $handle ) {
